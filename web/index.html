@@ -1,0 +1,275 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>body{margin:0}[hidden]{display:none!important}</style>
+<title>TetrClone</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;700&display=swap">
+<style>
+/* Layout: one-screen game. Stats strip on top, board fills the middle, thumb controls at the bottom. Single dark look by choice. */
+:root {
+  --bg: #0d1017;
+  --well: #070a10;
+  --grid: #161b26;
+  --fg: #e6ebf5;
+  --dim: #7d889e;
+  --key: #1b2230;
+  --key-hot: #2a3550;
+  --accent: #ffcf4a;
+  --font: "Chakra Petch", ui-monospace, "SF Mono", Menlo, monospace;
+  color-scheme: dark;
+}
+html, body { height: 100%; }
+body { box-sizing: border-box; }
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font);
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 10px;
+  overscroll-behavior: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+#app { height: 100%; display: flex; flex-direction: column; gap: 10px; max-width: 520px; margin: 0 auto; }
+.stats { display: flex; align-items: center; gap: 14px; }
+.stat { display: flex; flex-direction: column; min-width: 0; }
+.stat span { font-size: 10px; letter-spacing: .14em; color: var(--dim); text-transform: uppercase; }
+.stat b { font-size: 20px; font-variant-numeric: tabular-nums; line-height: 1.1; }
+.stat.score { flex: 1; }
+.stat.score b { color: var(--accent); }
+#nextBox { width: 64px; height: 40px; flex: none; }
+#stage { flex: 1; min-height: 0; display: flex; justify-content: center; align-items: center; position: relative; }
+#board { background: var(--well); border: 1px solid var(--grid); border-radius: 4px; display: block; }
+#overlay {
+  position: absolute; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
+  background: rgba(7, 10, 16, .82); text-align: center; border-radius: 4px; cursor: pointer;
+}
+#overlay h1 { margin: 0; font-size: 28px; letter-spacing: .08em; }
+#overlay p { margin: 0; font-size: 13px; color: var(--dim); padding: 0 12px; }
+.pad { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
+.pad button {
+  font: 700 20px var(--font); color: var(--fg); background: var(--key); border: 1px solid #263048;
+  border-radius: 10px; height: 56px; touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+}
+.pad button:active, .pad button.on { background: var(--key-hot); }
+.pad button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.pad .wide { grid-column: span 1; }
+.pad .drop { color: var(--accent); }
+.meta { display: flex; justify-content: space-between; font-size: 11px; color: var(--dim); }
+.meta button { font: inherit; color: var(--dim); background: none; border: 0; padding: 4px 0; text-decoration: underline; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+</head>
+<body>
+<div id="app">
+  <div class="stats">
+    <div class="stat score"><span>Score</span><b id="score">0</b></div>
+    <div class="stat"><span>Lines</span><b id="lines">0</b></div>
+    <div class="stat"><span>Level</span><b id="level">1</b></div>
+    <canvas id="nextBox" width="64" height="40" aria-label="Next piece"></canvas>
+  </div>
+  <div id="stage">
+    <canvas id="board" aria-label="Tetris board"></canvas>
+    <div id="overlay"><h1 id="ovTitle">TETRCLONE</h1><p id="ovText">Tap to start</p></div>
+  </div>
+  <div class="pad">
+    <button id="bLeft" aria-label="Move left">&#9664;</button>
+    <button id="bRight" aria-label="Move right">&#9654;</button>
+    <button id="bRot" aria-label="Rotate">&#10227;</button>
+    <button id="bDown" aria-label="Soft drop">&#9660;</button>
+    <button id="bDrop" class="drop" aria-label="Hard drop">&#10515;</button>
+  </div>
+  <div class="meta">
+    <span>Keys: arrows, space = drop</span>
+    <button id="bPause">Pause</button>
+  </div>
+</div>
+
+<script>
+(function () {
+  var COLS = 10, ROWS = 20;
+  var COLORS = ['#2fe6e6', '#f2e233', '#a64ef0', '#3ee05a', '#f04a4a', '#4a6cf5', '#f5a03a'];
+  var BASE = [
+    [[0,1],[1,1],[2,1],[3,1]], [[1,0],[2,0],[1,1],[2,1]], [[1,0],[0,1],[1,1],[2,1]],
+    [[1,0],[2,0],[0,1],[1,1]], [[0,0],[1,0],[1,1],[2,1]], [[0,0],[0,1],[1,1],[2,1]], [[2,0],[0,1],[1,1],[2,1]]
+  ];
+  var SHAPES = BASE.map(function (cells, p) {
+    var size = p < 2 ? 4 : 3, out = [], cur = cells;
+    for (var r = 0; r < 4; r++) {
+      out.push(cur);
+      cur = p === 1 ? cur : cur.map(function (c) { return [size - 1 - c[1], c[0]]; });
+    }
+    return out;
+  });
+
+  var board, piece, rot, px, py, next, score, lines, level, state, bag = [], acc = 0, last = 0;
+  // state: 'ready' | 'play' | 'pause' | 'over'
+
+  function draw7() {
+    if (!bag.length) {
+      bag = [0,1,2,3,4,5,6];
+      for (var i = 6; i > 0; i--) { var j = Math.floor(Math.random() * (i + 1)); var t = bag[i]; bag[i] = bag[j]; bag[j] = t; }
+    }
+    return bag.pop();
+  }
+  function reset() {
+    board = []; for (var y = 0; y < ROWS; y++) board.push(new Array(COLS).fill(0));
+    score = 0; lines = 0; level = 1; bag = []; next = draw7(); spawn(); acc = 0;
+  }
+  function spawn() {
+    piece = next; next = draw7(); rot = 0; px = 3; py = 0;
+    if (hit(piece, rot, px, py)) state = 'over';
+  }
+  function hit(p, r, x, y) {
+    var c = SHAPES[p][r];
+    for (var i = 0; i < 4; i++) {
+      var cx = x + c[i][0], cy = y + c[i][1];
+      if (cx < 0 || cx >= COLS || cy >= ROWS) return true;
+      if (cy >= 0 && board[cy][cx]) return true;
+    }
+    return false;
+  }
+  function move(dx) { if (state === 'play' && !hit(piece, rot, px + dx, py)) px += dx; }
+  function rotate() {
+    if (state !== 'play') return;
+    var nr = (rot + 1) % 4, kicks = [0, -1, 1, -2, 2];
+    for (var i = 0; i < kicks.length; i++) {
+      if (!hit(piece, nr, px + kicks[i], py)) { rot = nr; px += kicks[i]; return; }
+    }
+  }
+  function soft(user) {
+    if (state !== 'play') return;
+    if (!hit(piece, rot, px, py + 1)) { py++; if (user) score += 1; } else lock();
+  }
+  function hard() {
+    if (state !== 'play') return;
+    while (!hit(piece, rot, px, py + 1)) { py++; score += 2; }
+    lock();
+  }
+  function ghostY() { var y = py; while (!hit(piece, rot, px, y + 1)) y++; return y; }
+  function lock() {
+    var c = SHAPES[piece][rot];
+    for (var i = 0; i < 4; i++) { var cy = py + c[i][1]; if (cy >= 0) board[cy][px + c[i][0]] = piece + 1; }
+    var cleared = 0;
+    for (var y = ROWS - 1; y >= 0; y--) {
+      if (board[y].every(function (v) { return v; })) {
+        board.splice(y, 1); board.unshift(new Array(COLS).fill(0)); cleared++; y++;
+      }
+    }
+    if (cleared) {
+      score += [0, 100, 300, 500, 800][cleared] * level;
+      lines += cleared; level = Math.floor(lines / 10) + 1;
+    }
+    spawn();
+  }
+  function interval() { return Math.max(80, 800 - (level - 1) * 70); }
+
+  // ---------- rendering ----------
+  var cv = document.getElementById('board'), ctx = cv.getContext('2d');
+  var nx = document.getElementById('nextBox'), nctx = nx.getContext('2d');
+  var stage = document.getElementById('stage'), ov = document.getElementById('overlay');
+  var cell = 24, dpr = 1;
+
+  function fit() {
+    dpr = window.devicePixelRatio || 1;
+    var w = stage.clientWidth, h = stage.clientHeight;
+    cell = Math.max(10, Math.floor(Math.min(w / COLS, h / ROWS)));
+    cv.width = COLS * cell * dpr; cv.height = ROWS * cell * dpr;
+    cv.style.width = COLS * cell + 'px'; cv.style.height = ROWS * cell + 'px';
+    ov.style.width = cv.style.width; ov.style.height = cv.style.height;
+    render();
+  }
+  function block(c, x, y, s, color, alpha) {
+    c.globalAlpha = alpha || 1;
+    c.fillStyle = color; c.fillRect(x, y, s - 1, s - 1);
+    if (!alpha) { c.fillStyle = 'rgba(255,255,255,.22)'; c.fillRect(x, y, s - 1, Math.max(2, s * .12)); }
+    c.globalAlpha = 1;
+  }
+  function render() {
+    var s = cell * dpr;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, cv.width, cv.height);
+    ctx.strokeStyle = '#161b26'; ctx.lineWidth = 1; ctx.beginPath();
+    for (var x = 1; x < COLS; x++) { ctx.moveTo(x * s + .5, 0); ctx.lineTo(x * s + .5, ROWS * s); }
+    for (var y = 1; y < ROWS; y++) { ctx.moveTo(0, y * s + .5); ctx.lineTo(COLS * s, y * s + .5); }
+    ctx.stroke();
+    for (y = 0; y < ROWS; y++) for (x = 0; x < COLS; x++) if (board[y][x]) block(ctx, x * s, y * s, s, COLORS[board[y][x] - 1]);
+    if (state !== 'over') {
+      var c = SHAPES[piece][rot], gy = ghostY(), i;
+      for (i = 0; i < 4; i++) block(ctx, (px + c[i][0]) * s, (gy + c[i][1]) * s, s, COLORS[piece], .25);
+      for (i = 0; i < 4; i++) block(ctx, (px + c[i][0]) * s, (py + c[i][1]) * s, s, COLORS[piece]);
+    }
+    // next piece
+    nctx.clearRect(0, 0, 64, 40);
+    var nc = SHAPES[next][0], ns = 12;
+    for (var k = 0; k < 4; k++) block(nctx, 4 + nc[k][0] * ns, 4 + nc[k][1] * ns, ns, COLORS[next]);
+    document.getElementById('score').textContent = score;
+    document.getElementById('lines').textContent = lines;
+    document.getElementById('level').textContent = level;
+    var title = document.getElementById('ovTitle'), text = document.getElementById('ovText');
+    ov.hidden = state === 'play';
+    if (state === 'pause') { title.textContent = 'PAUSED'; text.textContent = 'Tap to resume'; }
+    if (state === 'over') { title.textContent = 'GAME OVER'; text.textContent = score + ' points. Tap to play again'; }
+    if (state === 'ready') { title.textContent = 'TETRCLONE'; text.textContent = 'Tap to start'; }
+    document.getElementById('bPause').textContent = state === 'pause' ? 'Resume' : 'Pause';
+  }
+
+  // ---------- loop ----------
+  function frame(t) {
+    if (state === 'play') {
+      acc += t - last;
+      while (acc >= interval() && state === 'play') { acc -= interval(); soft(false); }
+      render();
+    }
+    last = t; requestAnimationFrame(frame);
+  }
+  function start() { reset(); state = 'play'; render(); }
+  function togglePause() {
+    if (state === 'play') state = 'pause'; else if (state === 'pause') state = 'play';
+    acc = 0; render();
+  }
+  ov.addEventListener('click', function () {
+    if (state === 'pause') togglePause(); else start();
+  });
+  document.getElementById('bPause').addEventListener('click', function () {
+    if (state === 'ready' || state === 'over') start(); else togglePause();
+  });
+
+  // ---------- input ----------
+  function hold(id, fn, repeat) {
+    var el = document.getElementById(id), t1, t2;
+    function stop() { clearTimeout(t1); clearInterval(t2); el.classList.remove('on'); }
+    el.addEventListener('pointerdown', function (e) {
+      e.preventDefault(); el.classList.add('on'); fn(); render();
+      if (repeat) { t1 = setTimeout(function () { t2 = setInterval(function () { fn(); render(); }, 55); }, 170); }
+    });
+    ['pointerup', 'pointercancel', 'pointerleave'].forEach(function (n) { el.addEventListener(n, stop); });
+  }
+  hold('bLeft', function () { move(-1); }, true);
+  hold('bRight', function () { move(1); }, true);
+  hold('bDown', function () { soft(true); }, true);
+  hold('bRot', rotate, false);
+  hold('bDrop', hard, false);
+
+  document.addEventListener('keydown', function (e) {
+    var k = e.key;
+    if (k === 'p' || k === 'P') { togglePause(); return; }
+    if (k === 'r' || k === 'R' || ((k === 'Enter' || k === ' ') && (state === 'ready' || state === 'over'))) { start(); e.preventDefault(); return; }
+    var map = { ArrowLeft: function () { move(-1); }, ArrowRight: function () { move(1); }, ArrowUp: rotate,
+                ArrowDown: function () { soft(true); }, ' ': hard };
+    if (map[k]) { e.preventDefault(); map[k](); render(); }
+  });
+  document.addEventListener('visibilitychange', function () { if (document.hidden && state === 'play') togglePause(); });
+  window.addEventListener('resize', fit);
+
+  reset(); state = 'ready';
+  fit(); requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

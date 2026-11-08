@@ -2,7 +2,11 @@
 
 A minimal Tetris clone in Java Swing. No build tool or dependencies — just a JDK (17+).
 
-## Run
+## Play in a browser (phone friendly)
+
+Open `web/index.html` in any browser. It has on-screen touch buttons and also takes keyboard input.
+
+## Run the Java version
 
 ```bash
 javac -d out src/*.java
@@ -35,4 +39,5 @@ javac -d out src/*.java test/GameTest.java && java -cp out GameTest
 
 - `src/Game.java` – game logic, no Swing (unit-testable)
 - `src/Tetris.java` – Swing window, rendering and input
+- `web/index.html` – single-file browser version with touch controls
 - `test/GameTest.java` – dependency-free logic tests
