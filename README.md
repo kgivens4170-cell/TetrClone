@@ -29,14 +29,17 @@ Open `web/index.html` in any browser. No install or build step. Progress is save
 
 | Action | Touch | Keyboard |
 |--------|-------|----------|
-| Move | ◀ ▶ (hold to repeat) | ← → |
-| Rotate | ↻ ↺ | ↑ or X, Z |
-| Soft drop | ▼ | ↓ |
-| Hard drop | DROP | Space |
-| Hold | HOLD | C or Shift |
-| Pause | Pause | P or Esc |
+| Move | Drag left or right | ← → |
+| Soft drop | Drag down | ↓ |
+| Rotate | Tap, or the ↻ ↺ buttons | ↑ or X, Z |
+| Hard drop | Flick down, or DROP | Space |
+| Hold | Flick up, or HOLD | C or Shift |
+| Pause | II button | P or Esc |
+| Roguelike tools | Mirror, Trim, Grow buttons | V, B, N |
 
-**Swipe controls (on by default, toggle in Settings):** drag on the board to move the piece column by column, drag down to soft drop, tap to rotate, flick down to hard drop, flick up to hold. When a roguelike tool is armed, taps on the board aim the tool instead. The buttons always work too.
+On touch there are no direction buttons. Hold and ↺ sit under the left thumb, ↻ and DROP under the right.
+
+**Swipe controls:** swipe anywhere in the play area (not just on the board): drag to move the piece column by column, drag down to soft drop, tap to rotate, flick down to hard drop, flick up to hold. When a roguelike tool is armed, taps on the board aim the tool instead.
 
 Auto-repeat delay and speed are adjustable in Settings.
 
