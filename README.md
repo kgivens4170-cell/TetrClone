@@ -36,6 +36,8 @@ Open `web/index.html` in any browser. No install or build step. Progress is save
 | Hold | HOLD | C or Shift |
 | Pause | Pause | P or Esc |
 
+**Swipe controls (on by default, toggle in Settings):** drag on the board to move the piece column by column, drag down to soft drop, tap to rotate, flick down to hard drop, flick up to hold. When a roguelike tool is armed, taps on the board aim the tool instead. The buttons always work too.
+
 Auto-repeat delay and speed are adjustable in Settings.
 
 **Files:** `web/engine.js` (pure game logic), `web/ai.js` (bot), `web/rogue.js` (roguelike rules), `web/app.js` (UI, input, rendering, saves), `web/index.html`.

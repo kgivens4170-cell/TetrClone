@@ -47,7 +47,7 @@
       totals: { games: 0, lines: 0, pieces: 0, timeMs: 0, tspins: 0, tetrises: 0, perfect: 0, maxCombo: 0, maxB2b: 0, attack: 0,
                 vsWins: { easy: 0, medium: 0, hard: 0 }, vsLosses: 0 },
       history: [], ach: {}, rogue: { runs: 0, wins: 0, bestStage: 0, run: null },
-      settings: { das: 150, arr: 35, ghost: true, sound: true, vibrate: true, skin: 'classic', diff: 'medium' } };
+      settings: { das: 150, arr: 35, swipe: true, ghost: true, sound: true, vibrate: true, skin: 'classic', diff: 'medium' } };
   }
   function merge(dst, src) {
     Object.keys(src || {}).forEach(function (k) {
@@ -265,7 +265,7 @@
     var s = save.settings;
     $('dasV').textContent = s.das + ' ms'; $('das').value = s.das;
     $('arrV').textContent = s.arr + ' ms'; $('arr').value = s.arr;
-    $('optGhost').checked = s.ghost; $('optSound').checked = s.sound; $('optVib').checked = s.vibrate;
+    $('optSwipe').checked = s.swipe; $('optGhost').checked = s.ghost; $('optSound').checked = s.sound; $('optVib').checked = s.vibrate;
     var html = '';
     Object.keys(SKINS).forEach(function (id) {
       var k = SKINS[id], ok = skinUnlocked(id), v = k.vars;
@@ -308,7 +308,7 @@
     S.paused = !S.paused; Input.reset();
     if (S.paused) {
       $('ov').hidden = false;
-      $('ov').innerHTML = '<div class="panel"><h2>Paused</h2><div class="btns"><button class="btn primary" id="rResume">Resume</button><button class="btn" id="rRetry">Restart</button><button class="btn" id="rMenu">Quit to menu</button></div></div>';
+      $('ov').innerHTML = '<div class="panel"><h2>Paused</h2>' + (save.settings.swipe ? '<p class="note">Swipe: drag to move, tap to rotate, flick down to drop, flick up to hold.</p>' : '') + '<div class="btns"><button class="btn primary" id="rResume">Resume</button><button class="btn" id="rRetry">Restart</button><button class="btn" id="rMenu">Quit to menu</button></div></div>';
     } else $('ov').hidden = true;
     $('pauseBtn').textContent = S.paused ? 'Resume' : 'Pause';
   }
@@ -608,7 +608,13 @@
       var n = Math.ceil(S.countdown / 900);
       c.fillStyle = 'rgba(0,0,0,.45)'; c.fillRect(0, 0, COLS * cs, VIS * cs);
       c.fillStyle = s.vars.accent; c.textAlign = 'center'; c.font = '700 ' + cs * 4 + 'px "Chakra Petch", system-ui, sans-serif';
-      c.fillText(n > 0 ? String(Math.min(3, n)) : 'GO', COLS * cs / 2, VIS * cs / 2 + cs * 1.4); c.textAlign = 'start';
+      c.fillText(n > 0 ? String(Math.min(3, n)) : 'GO', COLS * cs / 2, VIS * cs / 2 + cs * 1.4);
+      if (save.settings.swipe) {
+        c.fillStyle = s.vars.fg; c.font = '500 ' + Math.max(10, Math.round(cs * 0.46)) + 'px "Chakra Petch", system-ui, sans-serif';
+        c.fillText('Drag to move \u00B7 Tap to rotate', COLS * cs / 2, VIS * cs - cs * 3.4);
+        c.fillText('Flick down to drop \u00B7 Flick up to hold', COLS * cs / 2, VIS * cs - cs * 2.4);
+      }
+      c.textAlign = 'start';
     }
     // opponent
     if (S.O) {
@@ -838,7 +844,36 @@
     var cx = Math.floor(x / S.cell), cy = Math.floor(y / S.cell) + HID, ok = rg.armed === 'trim' ? S.P.trimAt(cx, cy) : S.P.growAt(cx, cy);
     if (ok) toolSpend(rg.armed); else popup(rg.armed === 'trim' ? 'Pick a highlighted block' : 'Pick a highlighted square', '', 'fg');
   }
-  cvB.addEventListener('pointerdown', boardTap);
+  // ---- swipe gestures on the board: drag = move, drag down = soft drop, tap = rotate, flick down = hard drop, flick up = hold
+  function initGestures() {
+    var g = null;
+    cvB.addEventListener('pointerdown', function (e) {
+      if (S.mode === 'rogue' && S.rg && S.rg.armed) { boardTap(e); return; }
+      if (!save.settings.swipe || !Input.live() || (e.pointerType === 'mouse' && e.button !== 0)) return;
+      e.preventDefault();
+      try { cvB.setPointerCapture(e.pointerId); } catch (x) {}
+      g = { id: e.pointerId, x0: e.clientX, y0: e.clientY, ax: e.clientX, ay: e.clientY, t0: performance.now() };
+    });
+    cvB.addEventListener('pointermove', function (e) {
+      if (!g || e.pointerId !== g.id || !Input.live()) return;
+      var step = Math.max(14, S.cell), dx, guard = 0;
+      while (guard++ < 12 && ((dx = e.clientX - g.ax) >= step || dx <= -step)) { var d = dx > 0 ? 1 : -1; S.P.move(d); g.ax += d * step; }
+      if (e.clientY < g.ay) g.ay = e.clientY;
+      guard = 0;
+      while (guard++ < 12 && e.clientY - g.ay >= step) { S.P.softDrop(); g.ay += step; }
+    });
+    function up(e) {
+      if (!g || e.pointerId !== g.id) return;
+      var dx = e.clientX - g.x0, dy = e.clientY - g.y0, dt = performance.now() - g.t0, adx = Math.abs(dx), ady = Math.abs(dy);
+      g = null;
+      if (!Input.live()) return;
+      if (adx < 10 && ady < 10 && dt < 350) { S.P.rotate(1); return; }
+      if (ady > S.cell * 2.5 && ady > adx * 2 && dt < 300) { if (dy > 0) S.P.hardDrop(); else S.P.doHold(); }
+    }
+    cvB.addEventListener('pointerup', up);
+    cvB.addEventListener('pointercancel', function () { g = null; });
+  }
+  initGestures();
   [['tMirror', 'mirror'], ['tTrim', 'trim'], ['tGrow', 'grow']].forEach(function (p) {
     $(p[0]).addEventListener('pointerdown', function (e) { e.preventDefault(); Sfx.init(); toolUse(p[1]); });
   });
@@ -966,6 +1001,7 @@
   });
   $('das').addEventListener('input', function () { save.settings.das = +this.value; $('dasV').textContent = this.value + ' ms'; persist(); });
   $('arr').addEventListener('input', function () { save.settings.arr = +this.value; $('arrV').textContent = this.value + ' ms'; persist(); });
+  $('optSwipe').addEventListener('change', function () { save.settings.swipe = this.checked; persist(); });
   $('optGhost').addEventListener('change', function () { save.settings.ghost = this.checked; persist(); });
   $('optSound').addEventListener('change', function () { save.settings.sound = this.checked; persist(); Sfx.init(); Sfx.play('beep'); });
   $('optVib').addEventListener('change', function () { save.settings.vibrate = this.checked; persist(); buzz(30); });
