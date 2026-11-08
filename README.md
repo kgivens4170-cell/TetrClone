@@ -1,43 +1,63 @@
 # TetrClone
 
-A minimal Tetris clone in Java Swing. No build tool or dependencies — just a JDK (17+).
+A Tetris clone with two front-ends: a browser version (play on a phone or desktop) and the original minimal Java Swing version.
 
-## Play in a browser (phone friendly)
+## Browser version (`web/`)
 
-Open `web/index.html` in any browser. It has on-screen touch buttons and also takes keyboard input.
+Open `web/index.html` in any browser. No install or build step. Progress is saved in the browser's local storage.
 
-## Run the Java version
+**Engine**
+- SRS rotation with the full wall-kick tables, 7-bag randomizer, hold piece, 5-piece next queue
+- Ghost piece, 500 ms lock delay with the standard 15-move reset limit
+- T-spin and mini T-spin detection, combos, back-to-back bonuses, perfect clears
+- Guideline scoring and gravity curve, levels up to 20
+- Garbage lines with incoming-garbage meter and attack cancelling
+
+**Modes**
+| Mode | Goal |
+|------|------|
+| Marathon | Endless, speeds up every 10 lines |
+| Sprint | Clear 40 lines as fast as possible |
+| Ultra | Highest score in 2:00 |
+| Daily Challenge | Same piece sequence for everyone on a given date, 2:00 score attack |
+| Versus Bot | Send garbage to a computer opponent (Easy, Medium, Hard) |
+
+**Progress:** personal bests, lifetime stats, game history, 18 trophies, and 4 themes (3 unlockable).
+
+**Controls**
+
+| Action | Touch | Keyboard |
+|--------|-------|----------|
+| Move | ◀ ▶ (hold to repeat) | ← → |
+| Rotate | ↻ ↺ | ↑ or X, Z |
+| Soft drop | ▼ | ↓ |
+| Hard drop | DROP | Space |
+| Hold | HOLD | C or Shift |
+| Pause | Pause | P or Esc |
+
+Auto-repeat delay and speed are adjustable in Settings.
+
+**Files:** `web/engine.js` (pure game logic), `web/ai.js` (bot), `web/app.js` (UI, input, rendering, saves), `web/index.html`.
+
+## Tests
+
+```bash
+node test/engine.test.js
+```
+
+Covers rotation shapes, the 7-bag, line clears, scoring, T-spins, combos, back-to-back, hold, lock delay, garbage, and full bot-versus-engine games.
+
+## Single-page build
+
+`node tools/build-artifact.js out.html` inlines the scripts into one page without document tags (used for publishing as a shareable page).
+
+## Java Swing version
+
+A minimal desktop version (needs a JDK, 17+).
 
 ```bash
 javac -d out src/*.java
 java -cp out Tetris
 ```
 
-## Controls
-
-| Key | Action |
-|-----|--------|
-| ← / → | Move |
-| ↑ | Rotate (with simple wall kicks) |
-| ↓ | Soft drop |
-| Space | Hard drop |
-| P | Pause |
-| R | Restart |
-
-## Features
-
-10×20 board, 7 tetrominoes with a 7-bag randomizer, ghost piece, next-piece preview,
-line clears with scoring, levels (speed rises every 10 lines), game over.
-
-## Test
-
-```bash
-javac -d out src/*.java test/GameTest.java && java -cp out GameTest
-```
-
-## Layout
-
-- `src/Game.java` – game logic, no Swing (unit-testable)
-- `src/Tetris.java` – Swing window, rendering and input
-- `web/index.html` – single-file browser version with touch controls
-- `test/GameTest.java` – dependency-free logic tests
+Arrow keys move and rotate, Space drops, P pauses, R restarts. Logic tests: `javac -d out src/*.java test/GameTest.java && java -cp out GameTest`.

@@ -3,273 +3,206 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<style>body{margin:0}[hidden]{display:none!important}</style>
 <title>TetrClone</title>
 <meta name="claude:viewport-fit-sides" content="cover">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&display=swap">
 <style>
-/* Layout: one-screen game. Stats strip on top, board fills the middle, thumb controls at the bottom. Single dark look by choice. */
+/* Layout: menu and stats scroll; the game screen is one fixed screen (HUD, stats, board, thumb pad).
+   Colors are tokens that the chosen skin overrides at runtime. Dark Classic is the default. */
 :root {
-  --bg: #0d1017;
-  --well: #070a10;
-  --grid: #161b26;
-  --fg: #e6ebf5;
-  --dim: #7d889e;
-  --key: #1b2230;
-  --key-hot: #2a3550;
-  --accent: #ffcf4a;
+  --bg: #0d1017; --well: #070a10; --grid: #161b26; --fg: #e6ebf5; --dim: #8791a6;
+  --key: #1b2230; --keyhot: #2a3550; --line: #263048; --accent: #ffcf4a; --danger: #ff4d5e;
   --font: "Chakra Petch", ui-monospace, "SF Mono", Menlo, monospace;
   color-scheme: dark;
 }
+body { margin: 0; }
+[hidden] { display: none !important; }
 html, body { height: 100%; }
-body { box-sizing: border-box; }
 body {
-  background: var(--bg);
-  color: var(--fg);
-  font-family: var(--font);
-  padding-left: max(16px, env(safe-area-inset-left, 0px));
-  padding-right: max(16px, env(safe-area-inset-right, 0px));
-  padding-block: 10px;
-  overscroll-behavior: none;
-  user-select: none;
-  -webkit-user-select: none;
+  box-sizing: border-box; background: var(--bg); color: var(--fg); font-family: var(--font);
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 10px; overscroll-behavior: none; -webkit-user-select: none; user-select: none;
 }
-#app { height: 100%; display: flex; flex-direction: column; gap: 10px; max-width: 520px; margin: 0 auto; }
-.stats { display: flex; align-items: center; gap: 14px; }
+button { font-family: inherit; color: inherit; }
+button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.screen { height: 100%; overflow-y: auto; }
+.page { max-width: 520px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; padding-bottom: 20px; }
+
+/* menu */
+.logo { display: flex; flex-direction: column; gap: 6px; padding-top: 8px; }
+.logo h1 { margin: 0; font-size: 34px; letter-spacing: .12em; font-weight: 700; }
+.logo .blocks { display: flex; gap: 4px; }
+.logo .blocks i { width: 14px; height: 14px; border-radius: 2px; display: block; }
+.logo p { margin: 2px 0 0; font-size: 13px; color: var(--dim); }
+.modes { display: flex; flex-direction: column; gap: 8px; }
+.mode { display: flex; justify-content: space-between; align-items: center; gap: 12px; text-align: left; width: 100%; min-height: 64px;
+  background: var(--key); border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; cursor: pointer; }
+.mode:active { background: var(--keyhot); }
+.mtxt { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.mtxt b { font-size: 17px; letter-spacing: .03em; }
+.mtxt .date { font-size: 11px; color: var(--dim); font-weight: 500; margin-left: 6px; }
+.mtxt i { font-style: normal; font-size: 12px; color: var(--dim); }
+.mbest { display: flex; flex-direction: column; align-items: flex-end; font-size: 16px; font-weight: 700; color: var(--accent); font-variant-numeric: tabular-nums; flex: none; }
+.mbest small { font-size: 9px; letter-spacing: .14em; color: var(--dim); font-weight: 600; }
+.seg { display: flex; gap: 6px; margin: -2px 0 2px; }
+.seg button { flex: 1; height: 38px; border-radius: 8px; border: 1px solid var(--line); background: transparent; font-size: 13px; font-weight: 600; color: var(--dim); }
+.seg button.on { background: var(--accent); border-color: var(--accent); color: var(--bg); }
+.row2 { display: flex; gap: 8px; }
+.btn { flex: 1; min-height: 46px; border-radius: 10px; border: 1px solid var(--line); background: var(--key); font-size: 15px; font-weight: 600; cursor: pointer; padding: 0 14px; }
+.btn:active { background: var(--keyhot); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--bg); }
+.btn.danger { background: var(--danger); border-color: var(--danger); color: #fff; }
+.btn small { color: var(--dim); font-weight: 500; margin-left: 6px; }
+
+/* sub screens */
+.top { display: flex; align-items: center; gap: 12px; padding-top: 4px; }
+.top h2 { margin: 0; font-size: 22px; letter-spacing: .06em; }
+.back { width: 44px; height: 44px; border-radius: 10px; border: 1px solid var(--line); background: var(--key); font-size: 20px; cursor: pointer; }
+h3 { margin: 6px 0 0; font-size: 11px; letter-spacing: .16em; text-transform: uppercase; color: var(--dim); font-weight: 600; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.kv { display: flex; flex-direction: column; gap: 2px; background: var(--key); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; min-width: 0; }
+.kv span { font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--dim); }
+.kv b { font-size: 18px; font-variant-numeric: tabular-nums; }
+.kv b small { font-size: 10px; color: var(--dim); font-weight: 500; }
+.hrow { display: grid; grid-template-columns: 62px 1fr auto 40px; gap: 8px; align-items: center; font-size: 13px; padding: 5px 0; border-bottom: 1px solid var(--line); }
+.hm { color: var(--dim); }
+.hbar { height: 8px; background: var(--grid); border-radius: 4px; overflow: hidden; }
+.hbar i { display: block; height: 100%; background: var(--accent); }
+.hv { font-weight: 700; font-variant-numeric: tabular-nums; text-align: right; }
+.hd { color: var(--dim); font-size: 11px; text-align: right; }
+.empty { color: var(--dim); font-size: 13px; margin: 4px 0; }
+.trophy { display: flex; gap: 12px; align-items: center; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; opacity: .55; }
+.trophy.got { opacity: 1; background: var(--key); }
+.trophy .tmark { width: 24px; height: 24px; border-radius: 50%; border: 2px solid var(--line); display: flex; align-items: center; justify-content: center; font-size: 14px; flex: none; }
+.trophy.got .tmark { background: var(--accent); border-color: var(--accent); color: var(--bg); }
+.trophy span:last-child { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.trophy b { font-size: 14px; } .trophy i { font-style: normal; font-size: 12px; color: var(--dim); }
+.set { display: flex; flex-direction: column; gap: 6px; }
+.set label { display: flex; justify-content: space-between; font-size: 14px; }
+.set input[type=range] { width: 100%; accent-color: var(--accent); height: 28px; }
+.toggle { display: flex; justify-content: space-between; align-items: center; font-size: 15px; min-height: 40px; }
+.toggle input { width: 22px; height: 22px; accent-color: var(--accent); }
+.skins { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.skin { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; text-align: left; padding: 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--key); cursor: pointer; }
+.skin.on { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.skin:disabled { opacity: .5; cursor: default; }
+.skin small { font-size: 11px; color: var(--dim); }
+.sw { display: flex; gap: 3px; padding: 5px; border: 1px solid; border-radius: 6px; }
+.sw i { width: 14px; height: 14px; display: block; border-radius: 2px; }
+
+/* game */
+.game { display: flex; flex-direction: column; gap: 8px; max-width: 520px; margin: 0 auto; overflow: hidden; }
+.game[hidden] { display: none; }
+.hud { display: flex; align-items: center; gap: 10px; }
+.hud canvas { border: 1px solid var(--line); border-radius: 6px; flex: none; }
+.hudmid { flex: 1; min-width: 0; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--dim); text-align: center; }
+.statrow { display: flex; gap: 14px; align-items: flex-end; }
 .stat { display: flex; flex-direction: column; min-width: 0; }
 .stat span { font-size: 10px; letter-spacing: .14em; color: var(--dim); text-transform: uppercase; }
 .stat b { font-size: 20px; font-variant-numeric: tabular-nums; line-height: 1.1; }
-.stat.score { flex: 1; }
-.stat.score b { color: var(--accent); }
-#nextBox { width: 64px; height: 40px; flex: none; }
-#stage { flex: 1; min-height: 0; display: flex; justify-content: center; align-items: center; position: relative; }
-#board { background: var(--well); border: 1px solid var(--grid); border-radius: 4px; display: block; }
-#overlay {
-  position: absolute; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
-  background: rgba(7, 10, 16, .82); text-align: center; border-radius: 4px; cursor: pointer;
-}
-#overlay h1 { margin: 0; font-size: 28px; letter-spacing: .08em; }
-#overlay p { margin: 0; font-size: 13px; color: var(--dim); padding: 0 12px; }
-.pad { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
-.pad button {
-  font: 700 20px var(--font); color: var(--fg); background: var(--key); border: 1px solid #263048;
-  border-radius: 10px; height: 56px; touch-action: manipulation; -webkit-tap-highlight-color: transparent;
-}
-.pad button:active, .pad button.on { background: var(--key-hot); }
-.pad button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.pad .wide { grid-column: span 1; }
-.pad .drop { color: var(--accent); }
-.meta { display: flex; justify-content: space-between; font-size: 11px; color: var(--dim); }
-.meta button { font: inherit; color: var(--dim); background: none; border: 0; padding: 4px 0; text-decoration: underline; }
-@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+.stat.score { flex: 1; } .stat.score b { color: var(--accent); }
+#stage { flex: 1; min-height: 0; display: flex; justify-content: center; align-items: center; gap: 10px; position: relative; }
+#board, #opp { display: block; border: 1px solid var(--line); border-radius: 4px; background: var(--well); }
+#oppCol { display: flex; flex-direction: column; gap: 6px; align-self: flex-start; }
+#oppInfo { display: flex; flex-direction: column; gap: 1px; font-size: 11px; color: var(--dim); line-height: 1.3; }
+#oppInfo b { color: var(--fg); font-size: 12px; }
+#ov { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,.62); border-radius: 4px; z-index: 5; overflow-y: auto; }
+.panel { background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 16px; width: min(100%, 340px); display: flex; flex-direction: column; gap: 12px; margin: auto; }
+.panel h2 { margin: 0; font-size: 24px; letter-spacing: .08em; text-align: center; text-transform: uppercase; }
+.big { font-size: 38px; font-weight: 700; text-align: center; color: var(--accent); font-variant-numeric: tabular-nums; }
+.big small { display: block; font-size: 11px; letter-spacing: .16em; color: var(--dim); text-transform: uppercase; font-weight: 500; }
+.badge { align-self: center; background: var(--accent); color: var(--bg); font-weight: 700; font-size: 11px; letter-spacing: .14em; text-transform: uppercase; padding: 3px 10px; border-radius: 999px; }
+.note { margin: 0; text-align: center; font-size: 13px; color: var(--dim); }
+.btns { display: flex; flex-direction: column; gap: 8px; }
+.pad { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.pad button { font: 700 20px var(--font); background: var(--key); border: 1px solid var(--line); border-radius: 10px; height: 52px; touch-action: none; -webkit-tap-highlight-color: transparent; }
+.pad button.on, .pad button:active { background: var(--keyhot); }
+.pad .hard { grid-column: span 2; color: var(--accent); letter-spacing: .1em; font-size: 16px; }
+.pad .lbl { font-size: 14px; letter-spacing: .08em; }
+.meta { display: flex; justify-content: space-between; }
+.meta button { background: none; border: 0; color: var(--dim); font-size: 12px; text-decoration: underline; padding: 4px 2px; min-height: 28px; }
+#toast { position: fixed; left: 50%; transform: translateX(-50%); top: calc(env(safe-area-inset-top, 0px) + 10px); background: var(--accent); color: var(--bg); font-weight: 700; font-size: 13px; padding: 8px 14px; border-radius: 999px; z-index: 20; white-space: nowrap; max-width: 92vw; overflow: hidden; text-overflow: ellipsis; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 </style>
-
 </head>
 <body>
-<div id="app">
-  <div class="stats">
-    <div class="stat score"><span>Score</span><b id="score">0</b></div>
-    <div class="stat"><span>Lines</span><b id="lines">0</b></div>
-    <div class="stat"><span>Level</span><b id="level">1</b></div>
-    <canvas id="nextBox" width="64" height="40" aria-label="Next piece"></canvas>
+
+<section id="screen-menu" class="screen">
+  <div class="page">
+    <div class="logo">
+      <h1>TETRCLONE</h1>
+      <div class="blocks"><i style="background:#2fe6e6"></i><i style="background:#f2e233"></i><i style="background:#a64ef0"></i><i style="background:#3ee05a"></i><i style="background:#f04a4a"></i><i style="background:#4a6cf5"></i><i style="background:#f5a03a"></i></div>
+      <p>SRS rotation, hold, T-spins, combos and a bot that fights back.</p>
+    </div>
+    <div id="modes" class="modes"></div>
+    <div class="row2">
+      <button class="btn" id="goStats">Stats and trophies <small id="trophyCount"></small></button>
+      <button class="btn" id="goSettings">Settings</button>
+    </div>
+  </div>
+</section>
+
+<section id="screen-stats" class="screen" hidden>
+  <div class="page">
+    <div class="top"><button class="back" id="backStats" aria-label="Back">&#8592;</button><h2>Stats</h2></div>
+    <h3>Totals</h3><div id="statsGrid"></div>
+    <h3>Personal bests</h3><div id="bestGrid"></div>
+    <h3>Recent games</h3><div id="history"></div>
+    <h3>Trophies</h3><div id="trophies" style="display:flex;flex-direction:column;gap:6px"></div>
+  </div>
+</section>
+
+<section id="screen-settings" class="screen" hidden>
+  <div class="page">
+    <div class="top"><button class="back" id="backSettings" aria-label="Back">&#8592;</button><h2>Settings</h2></div>
+    <h3>Handling</h3>
+    <div class="set"><label for="das">Delay before auto-repeat <span id="dasV"></span></label><input type="range" id="das" min="60" max="300" step="10"></div>
+    <div class="set"><label for="arr">Auto-repeat speed (lower is faster) <span id="arrV"></span></label><input type="range" id="arr" min="0" max="100" step="5"></div>
+    <h3>Options</h3>
+    <label class="toggle">Ghost piece <input type="checkbox" id="optGhost"></label>
+    <label class="toggle">Sound effects <input type="checkbox" id="optSound"></label>
+    <label class="toggle">Vibration <input type="checkbox" id="optVib"></label>
+    <h3>Themes</h3><div id="skins" class="skins"></div>
+    <h3>Data</h3>
+    <button class="btn" id="resetBtn">Erase all progress</button>
+    <p class="empty">Progress is saved in this browser only.</p>
+  </div>
+</section>
+
+<section id="screen-game" class="screen game" hidden>
+  <div class="hud">
+    <canvas id="holdC" aria-label="Held piece"></canvas>
+    <div class="hudmid" id="modeName"></div>
+    <canvas id="nextC" aria-label="Next pieces"></canvas>
+  </div>
+  <div class="statrow">
+    <div class="stat score"><span>Score</span><b id="vScore">0</b></div>
+    <div class="stat"><span>Lines</span><b id="vLines">0</b></div>
+    <div class="stat"><span>Level</span><b id="vLevel">1</b></div>
+    <div class="stat"><span id="lblTime">Time</span><b id="vTime">0:00</b></div>
   </div>
   <div id="stage">
-    <canvas id="board" aria-label="Tetris board"></canvas>
-    <div id="overlay"><h1 id="ovTitle">TETRCLONE</h1><p id="ovText">Tap to start</p></div>
+    <canvas id="board" aria-label="Playfield"></canvas>
+    <div id="oppCol" hidden><div id="oppInfo"></div><canvas id="opp" aria-label="Opponent playfield"></canvas></div>
+    <div id="ov" hidden></div>
   </div>
   <div class="pad">
+    <button id="bHold" class="lbl" aria-label="Hold">HOLD</button>
     <button id="bLeft" aria-label="Move left">&#9664;</button>
     <button id="bRight" aria-label="Move right">&#9654;</button>
-    <button id="bRot" aria-label="Rotate">&#10227;</button>
-    <button id="bDown" aria-label="Soft drop">&#9660;</button>
-    <button id="bDrop" class="drop" aria-label="Hard drop">&#10515;</button>
+    <button id="bCW" aria-label="Rotate clockwise">&#8635;</button>
+    <button id="bCCW" aria-label="Rotate counter-clockwise">&#8634;</button>
+    <button id="bSoft" aria-label="Soft drop">&#9660;</button>
+    <button id="bHard" class="hard" aria-label="Hard drop">DROP</button>
   </div>
-  <div class="meta">
-    <span>Keys: arrows, space = drop</span>
-    <button id="bPause">Pause</button>
-  </div>
-</div>
+  <div class="meta"><button id="pauseBtn">Pause</button><button id="quitBtn">Quit to menu</button></div>
+</section>
 
-<script>
-(function () {
-  var COLS = 10, ROWS = 20;
-  var COLORS = ['#2fe6e6', '#f2e233', '#a64ef0', '#3ee05a', '#f04a4a', '#4a6cf5', '#f5a03a'];
-  var BASE = [
-    [[0,1],[1,1],[2,1],[3,1]], [[1,0],[2,0],[1,1],[2,1]], [[1,0],[0,1],[1,1],[2,1]],
-    [[1,0],[2,0],[0,1],[1,1]], [[0,0],[1,0],[1,1],[2,1]], [[0,0],[0,1],[1,1],[2,1]], [[2,0],[0,1],[1,1],[2,1]]
-  ];
-  var SHAPES = BASE.map(function (cells, p) {
-    var size = p < 2 ? 4 : 3, out = [], cur = cells;
-    for (var r = 0; r < 4; r++) {
-      out.push(cur);
-      cur = p === 1 ? cur : cur.map(function (c) { return [size - 1 - c[1], c[0]]; });
-    }
-    return out;
-  });
+<div id="toast" hidden></div>
 
-  var board, piece, rot, px, py, next, score, lines, level, state, bag = [], acc = 0, last = 0;
-  // state: 'ready' | 'play' | 'pause' | 'over'
-
-  function draw7() {
-    if (!bag.length) {
-      bag = [0,1,2,3,4,5,6];
-      for (var i = 6; i > 0; i--) { var j = Math.floor(Math.random() * (i + 1)); var t = bag[i]; bag[i] = bag[j]; bag[j] = t; }
-    }
-    return bag.pop();
-  }
-  function reset() {
-    board = []; for (var y = 0; y < ROWS; y++) board.push(new Array(COLS).fill(0));
-    score = 0; lines = 0; level = 1; bag = []; next = draw7(); spawn(); acc = 0;
-  }
-  function spawn() {
-    piece = next; next = draw7(); rot = 0; px = 3; py = 0;
-    if (hit(piece, rot, px, py)) state = 'over';
-  }
-  function hit(p, r, x, y) {
-    var c = SHAPES[p][r];
-    for (var i = 0; i < 4; i++) {
-      var cx = x + c[i][0], cy = y + c[i][1];
-      if (cx < 0 || cx >= COLS || cy >= ROWS) return true;
-      if (cy >= 0 && board[cy][cx]) return true;
-    }
-    return false;
-  }
-  function move(dx) { if (state === 'play' && !hit(piece, rot, px + dx, py)) px += dx; }
-  function rotate() {
-    if (state !== 'play') return;
-    var nr = (rot + 1) % 4, kicks = [0, -1, 1, -2, 2];
-    for (var i = 0; i < kicks.length; i++) {
-      if (!hit(piece, nr, px + kicks[i], py)) { rot = nr; px += kicks[i]; return; }
-    }
-  }
-  function soft(user) {
-    if (state !== 'play') return;
-    if (!hit(piece, rot, px, py + 1)) { py++; if (user) score += 1; } else lock();
-  }
-  function hard() {
-    if (state !== 'play') return;
-    while (!hit(piece, rot, px, py + 1)) { py++; score += 2; }
-    lock();
-  }
-  function ghostY() { var y = py; while (!hit(piece, rot, px, y + 1)) y++; return y; }
-  function lock() {
-    var c = SHAPES[piece][rot];
-    for (var i = 0; i < 4; i++) { var cy = py + c[i][1]; if (cy >= 0) board[cy][px + c[i][0]] = piece + 1; }
-    var cleared = 0;
-    for (var y = ROWS - 1; y >= 0; y--) {
-      if (board[y].every(function (v) { return v; })) {
-        board.splice(y, 1); board.unshift(new Array(COLS).fill(0)); cleared++; y++;
-      }
-    }
-    if (cleared) {
-      score += [0, 100, 300, 500, 800][cleared] * level;
-      lines += cleared; level = Math.floor(lines / 10) + 1;
-    }
-    spawn();
-  }
-  function interval() { return Math.max(80, 800 - (level - 1) * 70); }
-
-  // ---------- rendering ----------
-  var cv = document.getElementById('board'), ctx = cv.getContext('2d');
-  var nx = document.getElementById('nextBox'), nctx = nx.getContext('2d');
-  var stage = document.getElementById('stage'), ov = document.getElementById('overlay');
-  var cell = 24, dpr = 1;
-
-  function fit() {
-    dpr = window.devicePixelRatio || 1;
-    var w = stage.clientWidth, h = stage.clientHeight;
-    cell = Math.max(10, Math.floor(Math.min(w / COLS, h / ROWS)));
-    cv.width = COLS * cell * dpr; cv.height = ROWS * cell * dpr;
-    cv.style.width = COLS * cell + 'px'; cv.style.height = ROWS * cell + 'px';
-    ov.style.width = cv.style.width; ov.style.height = cv.style.height;
-    render();
-  }
-  function block(c, x, y, s, color, alpha) {
-    c.globalAlpha = alpha || 1;
-    c.fillStyle = color; c.fillRect(x, y, s - 1, s - 1);
-    if (!alpha) { c.fillStyle = 'rgba(255,255,255,.22)'; c.fillRect(x, y, s - 1, Math.max(2, s * .12)); }
-    c.globalAlpha = 1;
-  }
-  function render() {
-    var s = cell * dpr;
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.clearRect(0, 0, cv.width, cv.height);
-    ctx.strokeStyle = '#161b26'; ctx.lineWidth = 1; ctx.beginPath();
-    for (var x = 1; x < COLS; x++) { ctx.moveTo(x * s + .5, 0); ctx.lineTo(x * s + .5, ROWS * s); }
-    for (var y = 1; y < ROWS; y++) { ctx.moveTo(0, y * s + .5); ctx.lineTo(COLS * s, y * s + .5); }
-    ctx.stroke();
-    for (y = 0; y < ROWS; y++) for (x = 0; x < COLS; x++) if (board[y][x]) block(ctx, x * s, y * s, s, COLORS[board[y][x] - 1]);
-    if (state !== 'over') {
-      var c = SHAPES[piece][rot], gy = ghostY(), i;
-      for (i = 0; i < 4; i++) block(ctx, (px + c[i][0]) * s, (gy + c[i][1]) * s, s, COLORS[piece], .25);
-      for (i = 0; i < 4; i++) block(ctx, (px + c[i][0]) * s, (py + c[i][1]) * s, s, COLORS[piece]);
-    }
-    // next piece
-    nctx.clearRect(0, 0, 64, 40);
-    var nc = SHAPES[next][0], ns = 12;
-    for (var k = 0; k < 4; k++) block(nctx, 4 + nc[k][0] * ns, 4 + nc[k][1] * ns, ns, COLORS[next]);
-    document.getElementById('score').textContent = score;
-    document.getElementById('lines').textContent = lines;
-    document.getElementById('level').textContent = level;
-    var title = document.getElementById('ovTitle'), text = document.getElementById('ovText');
-    ov.hidden = state === 'play';
-    if (state === 'pause') { title.textContent = 'PAUSED'; text.textContent = 'Tap to resume'; }
-    if (state === 'over') { title.textContent = 'GAME OVER'; text.textContent = score + ' points. Tap to play again'; }
-    if (state === 'ready') { title.textContent = 'TETRCLONE'; text.textContent = 'Tap to start'; }
-    document.getElementById('bPause').textContent = state === 'pause' ? 'Resume' : 'Pause';
-  }
-
-  // ---------- loop ----------
-  function frame(t) {
-    if (state === 'play') {
-      acc += t - last;
-      while (acc >= interval() && state === 'play') { acc -= interval(); soft(false); }
-      render();
-    }
-    last = t; requestAnimationFrame(frame);
-  }
-  function start() { reset(); state = 'play'; render(); }
-  function togglePause() {
-    if (state === 'play') state = 'pause'; else if (state === 'pause') state = 'play';
-    acc = 0; render();
-  }
-  ov.addEventListener('click', function () {
-    if (state === 'pause') togglePause(); else start();
-  });
-  document.getElementById('bPause').addEventListener('click', function () {
-    if (state === 'ready' || state === 'over') start(); else togglePause();
-  });
-
-  // ---------- input ----------
-  function hold(id, fn, repeat) {
-    var el = document.getElementById(id), t1, t2;
-    function stop() { clearTimeout(t1); clearInterval(t2); el.classList.remove('on'); }
-    el.addEventListener('pointerdown', function (e) {
-      e.preventDefault(); el.classList.add('on'); fn(); render();
-      if (repeat) { t1 = setTimeout(function () { t2 = setInterval(function () { fn(); render(); }, 55); }, 170); }
-    });
-    ['pointerup', 'pointercancel', 'pointerleave'].forEach(function (n) { el.addEventListener(n, stop); });
-  }
-  hold('bLeft', function () { move(-1); }, true);
-  hold('bRight', function () { move(1); }, true);
-  hold('bDown', function () { soft(true); }, true);
-  hold('bRot', rotate, false);
-  hold('bDrop', hard, false);
-
-  document.addEventListener('keydown', function (e) {
-    var k = e.key;
-    if (k === 'p' || k === 'P') { togglePause(); return; }
-    if (k === 'r' || k === 'R' || ((k === 'Enter' || k === ' ') && (state === 'ready' || state === 'over'))) { start(); e.preventDefault(); return; }
-    var map = { ArrowLeft: function () { move(-1); }, ArrowRight: function () { move(1); }, ArrowUp: rotate,
-                ArrowDown: function () { soft(true); }, ' ': hard };
-    if (map[k]) { e.preventDefault(); map[k](); render(); }
-  });
-  document.addEventListener('visibilitychange', function () { if (document.hidden && state === 'play') togglePause(); });
-  window.addEventListener('resize', fit);
-
-  reset(); state = 'ready';
-  fit(); requestAnimationFrame(frame);
-})();
-</script>
+<script src="engine.js"></script>
+<script src="ai.js"></script>
+<script src="app.js"></script>
 </body>
 </html>
