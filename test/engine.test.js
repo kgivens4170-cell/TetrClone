@@ -5,7 +5,7 @@ let fails = 0, passes = 0;
 function t(name, ok, extra) { if (ok) passes++; else { fails++; console.log('FAIL', name, extra === undefined ? '' : extra); } }
 function eng(seed) { return new E({ seed: seed == null ? 1 : seed }); }
 function clearBoard(e) { e.board = e.board.map(() => new Array(E.COLS).fill(0)); }
-function put(e, piece, rot, x, y) { e.piece = piece; e.rot = rot; e.px = x; e.py = y; e.lastRot = false; e.lowest = y; e.lockTimer = 0; e.resets = 0; }
+function put(e, piece, rot, x, y) { e.setPiece(piece); e.rot = rot; e.px = x; e.py = y; e.lastRot = false; e.lowest = y; e.lockTimer = 0; e.resets = 0; }
 function fillRow(e, y, holes) { for (let x = 0; x < E.COLS; x++) e.board[y][x] = holes.includes(x) ? 0 : 1; }
 const B = E.H - 1; // bottom row index
 
@@ -117,9 +117,9 @@ t('T rot R nub at (2,1)', E.SHAPES[2][1].some(c => c[0] === 2 && c[1] === 1) && 
 {
   const e = eng(16); clearBoard(e); e.receiveGarbage(3);
   e.hardDrop(); // no clear -> 3 garbage rows rise
-  let g = 0; for (let y = 0; y < E.H; y++) if (e.board[y].includes(8)) g++;
+  let g = 0; for (let y = 0; y < E.H; y++) if (e.board[y].includes(99)) g++;
   t('3 garbage rows added', g === 3, g);
-  t('garbage rows have exactly one hole', e.board.filter(r => r.includes(8)).every(r => r.filter(v => v === 0).length === 1));
+  t('garbage rows have exactly one hole', e.board.filter(r => r.includes(99)).every(r => r.filter(v => v === 0).length === 1));
   const f = eng(17); clearBoard(f); f.board[B - 8][0] = 1; f.receiveGarbage(2);
   for (let y = B - 3; y <= B; y++) fillRow(f, y, [9]);
   put(f, 0, 1, 7, B - 3); f.hardDrop();   // tetris = 4 attack: cancels 2 incoming, sends 2

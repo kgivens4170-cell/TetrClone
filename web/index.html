@@ -123,6 +123,58 @@ h3 { margin: 6px 0 0; font-size: 11px; letter-spacing: .16em; text-transform: up
 .meta { display: flex; justify-content: space-between; }
 .meta button { background: none; border: 0; color: var(--dim); font-size: 12px; text-decoration: underline; padding: 4px 2px; min-height: 28px; }
 #toast { position: fixed; left: 50%; transform: translateX(-50%); top: calc(env(safe-area-inset-top, 0px) + 10px); background: var(--accent); color: var(--bg); font-weight: 700; font-size: 13px; padding: 8px 14px; border-radius: 999px; z-index: 20; white-space: nowrap; max-width: 92vw; overflow: hidden; text-overflow: ellipsis; }
+
+/* roguelike */
+.rg-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.rg-chips span { background: var(--key); border: 1px solid var(--line); border-radius: 999px; padding: 4px 10px; font-size: 12px; color: var(--dim); }
+.rg-chips b { color: var(--fg); font-variant-numeric: tabular-nums; }
+.stagecard { border: 1px solid var(--line); background: var(--key); border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 6px; }
+.stagecard.boss { border-color: var(--danger); }
+.stagecard small { font-size: 10px; letter-spacing: .16em; color: var(--dim); }
+.stagecard.boss small { color: var(--danger); }
+.stagecard h2 { margin: 0; font-size: 26px; letter-spacing: .04em; }
+.stagecard p { margin: 0; }
+.stagecard .goal { font-size: 16px; color: var(--accent); font-weight: 600; }
+.stagecard .rule { font-size: 13px; }
+.stagecard .meta2 { font-size: 12px; color: var(--dim); }
+.ph { margin: 4px 0 0; font-size: 24px; letter-spacing: .06em; }
+.warn { color: var(--danger); }
+.deck { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px; min-width: 64px; min-height: 64px; padding: 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--key); font-size: 11px; color: var(--dim); }
+button.chip { cursor: pointer; font-family: inherit; }
+button.chip:disabled { opacity: .4; cursor: default; }
+.chip .psvg { display: block; }
+.chip em { font-style: normal; font-size: 9px; letter-spacing: .1em; text-transform: uppercase; color: var(--accent); }
+.relics { display: flex; flex-direction: column; gap: 6px; }
+.relic { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; display: flex; flex-direction: column; gap: 1px; }
+.relic b { font-size: 14px; } .relic i { font-style: normal; font-size: 12px; color: var(--dim); }
+.cards { display: flex; flex-direction: column; gap: 8px; }
+.rcard { text-align: left; border: 1px solid var(--line); background: var(--key); border-radius: 12px; padding: 12px 14px; display: flex; flex-direction: column; gap: 3px; cursor: pointer; width: 100%; min-height: 72px; }
+.rcard:active { background: var(--keyhot); }
+.rcard.rare { border-color: var(--accent); }
+.rcard small { font-size: 10px; letter-spacing: .16em; color: var(--dim); } .rcard.rare small { color: var(--accent); }
+.rcard b { font-size: 17px; } .rcard i { font-style: normal; font-size: 13px; color: var(--dim); }
+.items { display: flex; flex-direction: column; gap: 8px; }
+.item { display: grid; grid-template-columns: auto 1fr auto; gap: 12px; align-items: center; padding: 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--key); }
+.item.sold { opacity: .5; }
+.item .ip { min-width: 0; display: flex; justify-content: center; }
+.item .ip:empty { display: none; }
+.item:has(.ip:empty) { grid-template-columns: 1fr auto; }
+.item .it { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.item b { font-size: 15px; } .item i { font-style: normal; font-size: 12px; color: var(--dim); }
+.item em { font-style: normal; font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--accent); }
+.item button { min-width: 96px; min-height: 44px; border-radius: 8px; border: 1px solid var(--accent); background: var(--accent); color: var(--bg); font-weight: 700; font-size: 13px; cursor: pointer; }
+.item button:disabled { background: transparent; color: var(--dim); border-color: var(--line); cursor: default; }
+.picker { border: 1px solid var(--accent); border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+.rewards { display: flex; flex-direction: column; gap: 4px; }
+.rrow { display: flex; justify-content: space-between; font-size: 14px; padding: 4px 0; border-bottom: 1px solid var(--line); }
+.rrow span { color: var(--dim); } .rrow b { font-variant-numeric: tabular-nums; }
+.tools { display: flex; gap: 8px; }
+.tools button { flex: 1; height: 44px; border-radius: 10px; border: 1px solid var(--line); background: var(--key); font-size: 13px; font-weight: 700; touch-action: none; -webkit-tap-highlight-color: transparent; }
+.tools button b { color: var(--accent); margin-left: 6px; }
+.tools button.on { background: var(--accent); color: var(--bg); border-color: var(--accent); } .tools button.on b { color: var(--bg); }
+.tools button:disabled { opacity: .4; }
+.hint { min-height: 14px; font-size: 12px; color: var(--accent); text-align: center; }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 </style>
 </head>
@@ -133,7 +185,7 @@ h3 { margin: 6px 0 0; font-size: 11px; letter-spacing: .16em; text-transform: up
     <div class="logo">
       <h1>TETRCLONE</h1>
       <div class="blocks"><i style="background:#2fe6e6"></i><i style="background:#f2e233"></i><i style="background:#a64ef0"></i><i style="background:#3ee05a"></i><i style="background:#f04a4a"></i><i style="background:#4a6cf5"></i><i style="background:#f5a03a"></i></div>
-      <p>SRS rotation, hold, T-spins, combos and a bot that fights back.</p>
+      <p>SRS rotation, T-spins, a bot that fights back, and a roguelike where you rebuild the pieces.</p>
     </div>
     <div id="modes" class="modes"></div>
     <div class="row2">
@@ -170,6 +222,13 @@ h3 { margin: 6px 0 0; font-size: 11px; letter-spacing: .16em; text-transform: up
   </div>
 </section>
 
+<section id="screen-rogue" class="screen" hidden>
+  <div class="page">
+    <div class="top"><button class="back" id="backRogue" aria-label="Back">&#8592;</button><h2>Roguelike</h2></div>
+    <div id="rogueBody" class="page" style="padding:0"></div>
+  </div>
+</section>
+
 <section id="screen-game" class="screen game" hidden>
   <div class="hud">
     <canvas id="holdC" aria-label="Held piece"></canvas>
@@ -177,15 +236,21 @@ h3 { margin: 6px 0 0; font-size: 11px; letter-spacing: .16em; text-transform: up
     <canvas id="nextC" aria-label="Next pieces"></canvas>
   </div>
   <div class="statrow">
-    <div class="stat score"><span>Score</span><b id="vScore">0</b></div>
-    <div class="stat"><span>Lines</span><b id="vLines">0</b></div>
-    <div class="stat"><span>Level</span><b id="vLevel">1</b></div>
+    <div class="stat score"><span id="lblScore">Score</span><b id="vScore">0</b></div>
+    <div class="stat"><span id="lblLines">Lines</span><b id="vLines">0</b></div>
+    <div class="stat"><span id="lblLevel">Level</span><b id="vLevel">1</b></div>
     <div class="stat"><span id="lblTime">Time</span><b id="vTime">0:00</b></div>
   </div>
   <div id="stage">
     <canvas id="board" aria-label="Playfield"></canvas>
     <div id="oppCol" hidden><div id="oppInfo"></div><canvas id="opp" aria-label="Opponent playfield"></canvas></div>
     <div id="ov" hidden></div>
+  </div>
+  <div id="hint" class="hint" hidden></div>
+  <div id="tools" class="tools" hidden>
+    <button id="tMirror">Mirror<b>0</b></button>
+    <button id="tTrim">Trim<b>0</b></button>
+    <button id="tGrow">Grow<b>0</b></button>
   </div>
   <div class="pad">
     <button id="bHold" class="lbl" aria-label="Hold">HOLD</button>
@@ -203,6 +268,7 @@ h3 { margin: 6px 0 0; font-size: 11px; letter-spacing: .16em; text-transform: up
 
 <script src="engine.js"></script>
 <script src="ai.js"></script>
+<script src="rogue.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
