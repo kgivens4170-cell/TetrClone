@@ -38,7 +38,7 @@ Open `web/index.html` in any browser. No install or build step. Progress is save
 | Pause | II button | P or Esc |
 | Roguelike tools | Mirror, Trim, Grow buttons | V, B, N |
 
-The whole screen is the touch surface, edges included. The only buttons in play are HOLD, II and DROP. Dragging puts the piece in the column nearest your finger, so you only need to aim within half a cell. A tap is a quick touch that barely moves; the left half of the board turns the piece left and the right half turns it right. When a roguelike tool is armed, taps on the board aim the tool instead.
+The whole screen is the touch surface, edges included. The only buttons in play are DROP (bottom-left corner, away from the right thumb), HOLD (bottom-right corner) and II. Both are square. They fire when you lift your finger while still on the button, so a graze or a slide across them does nothing. Settings can move DROP to the right corner. Dragging puts the piece in the column nearest your finger, so you only need to aim within half a cell. A tap is a quick touch that barely moves; the left half of the board turns the piece left and the right half turns it right. When a roguelike tool is armed, taps on the board aim the tool instead.
 
 Auto-repeat delay and speed are adjustable in Settings.
 

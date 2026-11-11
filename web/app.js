@@ -47,7 +47,7 @@
       totals: { games: 0, lines: 0, pieces: 0, timeMs: 0, tspins: 0, tetrises: 0, perfect: 0, maxCombo: 0, maxB2b: 0, attack: 0,
                 vsWins: { easy: 0, medium: 0, hard: 0 }, vsLosses: 0 },
       history: [], ach: {}, rogue: { runs: 0, wins: 0, bestStage: 0, run: null },
-      settings: { das: 150, arr: 35, ghost: true, sound: true, vibrate: true, skin: 'classic', diff: 'medium' } };
+      settings: { das: 150, arr: 35, dropRight: false, ghost: true, sound: true, vibrate: true, skin: 'classic', diff: 'medium' } };
   }
   function merge(dst, src) {
     Object.keys(src || {}).forEach(function (k) {
@@ -266,7 +266,7 @@
     var s = save.settings;
     $('dasV').textContent = s.das + ' ms'; $('das').value = s.das;
     $('arrV').textContent = s.arr + ' ms'; $('arr').value = s.arr;
-    $('optGhost').checked = s.ghost; $('optSound').checked = s.sound; $('optVib').checked = s.vibrate;
+    $('optDropRight').checked = s.dropRight; $('optGhost').checked = s.ghost; $('optSound').checked = s.sound; $('optVib').checked = s.vibrate;
     var html = '';
     Object.keys(SKINS).forEach(function (id) {
       var k = SKINS[id], ok = skinUnlocked(id), v = k.vars;
@@ -492,14 +492,24 @@
   document.addEventListener('visibilitychange', function () { if (document.hidden && S.screen === 'game' && !S.paused && !S.done) togglePause(); });
   window.addEventListener('blur', function () { Input.reset(); });
 
+  // HOLD and DROP act when the finger is lifted while still on the button, so a graze, a slide across, or a press that
+  // slips off the button does nothing.
   [['bHold', 'hold'], ['bHard', 'hard']].forEach(function (p) {
-    var el = $(p[0]);
-    el.addEventListener('pointerdown', function (e) { e.preventDefault(); el.classList.add('on'); Input.press(p[1]); });
-    ['pointerup', 'pointercancel', 'pointerleave'].forEach(function (n) {
-      el.addEventListener(n, function () { el.classList.remove('on'); Input.release(p[1]); });
+    var el = $(p[0]), armed = false;
+    el.addEventListener('pointerdown', function (e) {
+      e.preventDefault(); el.classList.add('on'); armed = true;
+      try { el.setPointerCapture(e.pointerId); } catch (x) {}
     });
+    el.addEventListener('pointerup', function (e) {
+      var r = el.getBoundingClientRect(), inside = e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom;
+      el.classList.remove('on');
+      if (armed && inside) Input.press(p[1]);
+      armed = false;
+    });
+    el.addEventListener('pointercancel', function () { el.classList.remove('on'); armed = false; });
     el.addEventListener('contextmenu', function (e) { e.preventDefault(); });
   });
+  function applyPadSide() { document.querySelector('.pad').classList.toggle('flip', !!save.settings.dropRight); }
 
   // ---------------------------------------------------------------- rendering
   var cvB = $('board'), cxB = cvB.getContext('2d'), cvO = $('opp'), cxO = cvO.getContext('2d');
@@ -1012,12 +1022,13 @@
   });
   $('das').addEventListener('input', function () { save.settings.das = +this.value; $('dasV').textContent = this.value + ' ms'; persist(); });
   $('arr').addEventListener('input', function () { save.settings.arr = +this.value; $('arrV').textContent = this.value + ' ms'; persist(); });
+  $('optDropRight').addEventListener('change', function () { save.settings.dropRight = this.checked; persist(); applyPadSide(); });
   $('optGhost').addEventListener('change', function () { save.settings.ghost = this.checked; persist(); });
   $('optSound').addEventListener('change', function () { save.settings.sound = this.checked; persist(); Sfx.init(); Sfx.play('beep'); });
   $('optVib').addEventListener('change', function () { save.settings.vibrate = this.checked; persist(); buzz(30); });
 
   if (!skinUnlocked(save.settings.skin)) save.settings.skin = 'classic';
-  applySkin();
+  applySkin(); applyPadSide();
   show('menu');
   requestAnimationFrame(frame);
   window.TetrApp = { S: S, save: function () { return save; }, start: startGame, Input: Input };
