@@ -96,10 +96,12 @@ CLEAR A LEVEL, THEN CHOOSE YOUR PATH. EVERY SCENE IS DIFFERENT.</p>
   var BOUNCE_STOPS = ['#ffffff', '#ffe27a', '#ff9a2a', '#ff3a6d', '#c040ff'];
   var BOUNCE_FULL = 60;                 // bounces to reach the last stop
 
-  // Brick elements by palette index:
-  // 0 fire, 1 water, 2 grass (poison), 3 lightning, 4 ice, 5 air, 6 rock (earth), 7 shadow.
-  // In level strings: '0'-'7' is a normal brick of that element,
-  // 'a'-'h' is a hard brick (two hits) of element 0-7, 'S' is steel (indestructible).
+  // Brick characters in level grids:
+  //   '0'-'7'  normal brick of that element (0 fire, 1 water, 2 grass, 3 lightning,
+  //            4 ice, 5 air, 6 rock, 7 shadow)
+  //   'a'-'h'  hard brick (two hits) of element 0-7 (letter = 'a' + element)
+  //   'S'      steel (indestructible, bounces the ball)
+  //   '.'      empty
 
   // ---------- Grid helpers ----------
   function blank(C, R) {
@@ -116,165 +118,254 @@ CLEAR A LEVEL, THEN CHOOSE YOUR PATH. EVERY SCENE IS DIFFERENT.</p>
     if (r >= 0 && r < g.length && c >= 0 && c < g[0].length) g[r][c] = ch;
   }
 
+  function at(g, r, c) {
+    return (r >= 0 && r < g.length && c >= 0 && c < g[0].length) ? g[r][c] : null;
+  }
+
   function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+  function randInt(lo, hi) { return lo + Math.floor(Math.random() * (hi - lo + 1)); }
+
+  function chance(p) { return Math.random() < p; }
 
   // Pick one of the given characters at random
   function pick(list) { return list[Math.floor(Math.random() * list.length)]; }
 
-  // ---------- Scenes (procedural biomes) ----------
-  // Each scene paints a grid of element characters in its own shape.
-  // key: the three elements the scene is built from, used for its path card.
+  // Hard brick letter for element e (0-7)
+  function hardOf(e) { return String.fromCharCode(97 + e); }
+
+  // ---------- Scenes: silhouettes built from the elements ----------
+  // Each scene paints a recognisable shape. key: the elements it is built from.
   var BIOMES = [
     { name: 'WATERFALL', key: ['1', '6', '2'], gen: function (C, R) {
-        // Water pours down the middle, rock cliffs and grass on the sides, a pool at the bottom
+        // A canyon of rock with grass caps; a waterfall pours down the middle into a pool
         var g = blank(C, R), cx = (C - 1) / 2;
-        var half = C > 7 ? 1 + Math.floor(Math.random() * 2) : Math.floor(Math.random() * 2);
+        var half = chance(0.5) ? 0 : 1;                       // water column half-width
         for (var r = 0; r < R; r++) for (var c = 0; c < C; c++) {
           var d = Math.abs(c - cx);
           if (d <= half) put(g, r, c, '1');
-          else if (d <= half + 1) put(g, r, c, r < 2 ? '2' : (Math.random() < 0.8 ? 'S' : '6'));
-          else put(g, r, c, r === 0 ? '2' : (Math.random() < 0.55 ? '6' : '.'));
+          else if (d <= half + 1.5) put(g, r, c, r === 0 ? '2' : 'S');       // steel cliff faces
+          else if (d <= (C - 1) / 2 + 0.5) put(g, r, c, r === 0 ? '2' : (chance(0.7) ? '6' : 'S'));
         }
-        for (var c2 = 0; c2 < C; c2++) if (Math.random() < 0.8) put(g, R - 1, c2, '1');
+        for (var c2 = 0; c2 < C; c2++) {
+          if (Math.abs(c2 - cx) <= half + 1) put(g, R - 1, c2, '1');   // splash pool
+          else put(g, R - 1, c2, '6');
+        }
         return g;
     } },
     { name: 'VOLCANO', key: ['0', '6', '7'], gen: function (C, R) {
-        // Lava cone rising from the base, rock ridges around it, smoke at the top
+        // A cone with a lava core and an open crater at the top, smoke above
         var g = blank(C, R), cx = (C - 1) / 2;
-        for (var r = 0; r < R; r++) for (var c = 0; c < C; c++) {
-          var d = Math.abs(c - cx);
-          if (d <= r * 0.5 + 0.4) put(g, r, c, '0');
-          else if (d <= r * 0.5 + 1.6) put(g, r, c, Math.random() < 0.6 ? 'S' : '6');
-          else if (r === 0 && Math.random() < 0.5) put(g, r, c, '7');
-          else if (Math.random() < 0.25) put(g, r, c, '6');
+        for (var r = 0; r < R; r++) {
+          var w = R > 1 ? (r / (R - 1)) * (C / 2) : 0;        // slope widens toward the base
+          for (var c = 0; c < C; c++) {
+            var d = Math.abs(c - cx);
+            if (d <= w * 0.45) put(g, r, c, '0');
+            else if (d <= w) put(g, r, c, chance(0.25) ? 'S' : '6');
+            else if (r === 0 && chance(0.4)) put(g, r, c, '7');
+          }
         }
         for (var c2 = 0; c2 < C; c2++) put(g, R - 1, c2, '6');
         return g;
     } },
-    { name: 'FOREST', key: ['2', '6', '2'], gen: function (C, R) {
-        // Leafy canopy above, trunks and ground below
-        var g = blank(C, R);
-        for (var r = 0; r < R - 1; r++) for (var c = 0; c < C; c++) {
-          if (Math.random() < 0.5 + 0.1 * (r % 2)) put(g, r, c, '2');
-        }
-        for (var c2 = 0; c2 < C; c2++) {
-          if (c2 % 3 === 1) put(g, R - 2, c2, '6');
-          put(g, R - 1, c2, Math.random() < 0.7 ? '2' : '6');
-        }
-        return g;
-    } },
-    { name: 'MOUNTAINS', key: ['4', '6', 'S'], gen: function (C, R) {
-        // Rolling peaks of rock with ice caps
-        var g = blank(C, R), f = 0.5 + Math.random() * 0.8, ph = Math.random() * TAU;
-        for (var c = 0; c < C; c++) {
-          var h = Math.floor((R - 1) * (0.35 + 0.65 * Math.abs(Math.sin(c * f + ph))));
-          for (var r = h; r < R; r++) put(g, r, c, r === h ? '4' : (Math.random() < 0.15 ? 'S' : '6'));
-        }
-        return g;
-    } },
-    { name: 'STORM', key: ['5', '3', '1'], gen: function (C, R) {
-        // Cloud band, a lightning bolt down the middle, rain pool at the bottom
-        var g = blank(C, R), bolt = Math.floor(Math.random() * C);
-        for (var c = 0; c < C; c++) for (var r = 0; r < Math.min(2, R); r++) {
-          if (Math.random() < 0.7) put(g, r, c, '5');
-        }
-        for (var r2 = 2; r2 < R - 1; r2++) put(g, r2, clamp(bolt + (r2 % 2 ? 1 : 0), 0, C - 1), '3');
-        for (var c2 = 0; c2 < C; c2++) if (Math.random() < 0.6) put(g, R - 1, c2, '1');
-        return g;
-    } },
-    { name: 'CRYSTAL', key: ['4', '7', 'S'], gen: function (C, R) {
-        // Steel walls framing an ice and shadow cavern
-        var g = blank(C, R);
+    { name: 'DESERT', key: ['0', '6', '2'], gen: function (C, R) {
+        // A fiery sun in the corner, rolling rock dunes, and a grass cactus
+        var g = blank(C, R), sunC = C - 1, rad = Math.max(1.2, C / 4);
         for (var r = 0; r < R; r++) for (var c = 0; c < C; c++) {
-          if (c === 0 || c === C - 1) put(g, r, c, 'S');
-          else if (Math.random() < 0.55) put(g, r, c, '4');
-          else if (Math.random() < 0.2) put(g, r, c, '7');
+          if ((c - sunC) * (c - sunC) + r * r <= rad * rad) put(g, r, c, '0');
+        }
+        var f = 0.6 + Math.random() * 0.6, ph = Math.random() * TAU;
+        var top = [];
+        for (var c2 = 0; c2 < C; c2++) {
+          var h = Math.max(1, R - 2 + Math.round(Math.sin(c2 * f + ph) * 0.8));
+          top.push(h);
+          for (var r2 = h; r2 < R; r2++) put(g, r2, c2, '6');
+        }
+        if (C >= 3) {
+          var cc = randInt(1, C - 2), ch2 = top[cc];
+          for (var r3 = ch2 - 1; r3 >= Math.max(0, ch2 - 3); r3--) put(g, r3, cc, '2');
+          var side = chance(0.5) ? cc - 1 : cc + 1;
+          if (ch2 - 2 >= 0) put(g, ch2 - 2, side, '2');
         }
         return g;
     } },
     { name: 'SKY ISLANDS', key: ['5', '6', '2'], gen: function (C, R) {
-        // Floating rock islands with grass on top, drifting air between them
+        // Floating rock islands with grass tops, hanging roots, drifting air
         var g = blank(C, R);
-        for (var r = 0; r < R; r++) for (var c = 0; c < C; c++) if (Math.random() < 0.2) put(g, r, c, '5');
-        var islands = 2 + Math.floor(Math.random() * 2);
+        for (var r = 0; r < R; r++) for (var c = 0; c < C; c++) if (chance(0.15)) put(g, r, c, '5');
+        var hw = C >= 9 ? 2 : 1;
+        var islands = C >= 9 ? randInt(1, 2) : 1;
         for (var i = 0; i < islands; i++) {
-          var ir = 1 + Math.floor(Math.random() * Math.max(1, R - 1));
-          var ic = Math.floor(Math.random() * C);
-          var hw = 1 + Math.floor(Math.random() * 2);
-          for (var dc = -hw; dc <= hw; dc++) {
-            put(g, ir, ic + dc, '6');
-            if (Math.random() < 0.6) put(g, ir - 1, ic + dc, '2');
+          var ic = randInt(hw, C - 1 - hw), ir = randInt(1, Math.max(1, R - 4));
+          for (var k = 0; k < 3; k++) {                       // tapering island body
+            for (var dc = -(hw - k); dc <= hw - k; dc++) put(g, ir + k, ic + dc, '6');
+          }
+          for (var dc2 = -hw; dc2 <= hw; dc2++) if (chance(0.8)) put(g, ir - 1, ic + dc2, '2');
+          if (ir + 3 < R) put(g, ir + 3, ic, 'g');            // hard rock root
+        }
+        return g;
+    } },
+    { name: 'FOREST', key: ['2', '6', '2'], gen: function (C, R) {
+        // Round canopies of leaves on rock trunks, a grassy floor
+        var g = blank(C, R), canopyR = Math.max(0, Math.min(1, R - 3));
+        for (var c0 = randInt(0, 1); c0 < C; c0 += 3) {
+          for (var dr = -1; dr <= 1; dr++) for (var dc = -2; dc <= 2; dc++) {
+            if (dr * dr + dc * dc / 2.25 <= 1.6) put(g, canopyR + dr, c0 + dc, chance(0.2) ? 'c' : '2');
+          }
+          for (var r = canopyR + 2; r < R - 1; r++) put(g, r, c0, '6');
+        }
+        for (var c2 = 0; c2 < C; c2++) put(g, R - 1, c2, chance(0.7) ? '2' : '6');
+        return g;
+    } },
+    { name: 'MOUNTAINS', key: ['4', '6', 'S'], gen: function (C, R) {
+        // Two peaks with ice caps over a rock body and steel bedrock
+        var g = blank(C, R), hw = Math.max(1.5, C * 0.45);
+        var p1 = C * 0.3 + Math.random() - 0.5, p2 = C * 0.7 + Math.random() - 0.5;
+        for (var c = 0; c < C; c++) {
+          var hgt = Math.round((R - 1) * Math.max(
+            Math.max(0, 1 - Math.abs(c - p1) / hw),
+            Math.max(0, 1 - Math.abs(c - p2) / hw)));
+          for (var r = R - hgt; r < R; r++) {
+            if (r < 0) continue;
+            if (r === R - hgt) put(g, r, c, hgt >= 2 ? '4' : '6');   // ice cap at the peak
+            else put(g, r, c, chance(0.12) ? 'S' : '6');
+          }
+        }
+        return g;
+    } },
+    { name: 'STORM', key: ['7', '3', '1'], gen: function (C, R) {
+        // A dark cloud, a lightning bolt, rain, and a puddle
+        var g = blank(C, R);
+        for (var r = 0; r < Math.min(2, R - 1); r++) for (var c = 0; c < C; c++) {
+          if (chance(0.8)) put(g, r, c, '7');
+          else if (chance(0.3)) put(g, r, c, '5');
+        }
+        var cb = randInt(1, Math.max(1, C - 2));
+        for (var r2 = 2; r2 < R - 1; r2++) {
+          var bc = clamp(cb + (r2 % 2 ? 0 : (chance(0.5) ? 1 : -1)), 0, C - 1);
+          put(g, r2, bc, chance(0.3) ? 'd' : '3');              // hard bolt pieces sometimes
+        }
+        for (var r3 = 2; r3 < R - 1; r3++) for (var c3 = 0; c3 < C; c3++) {
+          if (at(g, r3, c3) === '.' && chance(0.12)) put(g, r3, c3, '1');   // rain
+        }
+        for (var c4 = 0; c4 < C; c4++) put(g, R - 1, c4, (c4 === 0 || c4 === C - 1) ? '6' : '1');
+        return g;
+    } },
+    { name: 'CRYSTAL', key: ['4', '7', 'S'], gen: function (C, R) {
+        // A steel-walled cave with ice spikes hanging and rising
+        var g = blank(C, R);
+        for (var r = 0; r < R; r++) for (var c = 0; c < C; c++) {
+          if (r === 0 || r === R - 1 || c === 0 || c === C - 1) put(g, r, c, 'S');
+          else if (chance(0.25)) put(g, r, c, '7');
+        }
+        for (var c2 = 1; c2 < C - 1; c2++) {
+          if (chance(0.5)) {                                    // spike hanging from the ceiling
+            put(g, 1, c2, '4');
+            if (R > 3 && chance(0.5)) put(g, 2, c2, 'e');
+          }
+          if (chance(0.4) && R > 2) {                           // spike rising from the floor
+            put(g, R - 2, c2, '4');
+            if (R > 3 && chance(0.4)) put(g, R - 3, c2, 'e');
           }
         }
         return g;
     } },
     { name: 'SWAMP', key: ['2', '1', '6'], gen: function (C, R) {
-        // Patches of grass and water with root-like rock
-        var g = blank(C, R);
-        for (var r = 0; r < R; r++) for (var c = 0; c < C; c++) {
-          var x = Math.random();
-          if (x < 0.4) put(g, r, c, '2');
-          else if (x < 0.6) put(g, r, c, '1');
-          else if (x < 0.7) put(g, r, c, '6');
+        // Murky water at the bottom, reeds rising out of it, a rock mound with roots
+        var g = blank(C, R), cx = Math.floor((C - 1) / 2);
+        for (var c = 0; c < C; c++) {
+          put(g, R - 1, c, '1');
+          if (R > 2) put(g, R - 2, c, chance(0.6) ? '1' : '2');
         }
-        return g;
-    } },
-    { name: 'DESERT', key: ['0', '6', '0'], gen: function (C, R) {
-        // A sun of fire over rolling rock dunes
-        var g = blank(C, R), cx = (C - 1) / 2, rad = Math.max(1.5, C / 3), f = 0.5 + Math.random();
-        for (var r = 0; r < R; r++) for (var c = 0; c < C; c++) {
-          var d = Math.sqrt(Math.pow(c - cx, 2) + Math.pow((r - 0) * 2, 2));
-          if (d <= rad && Math.random() < 0.6) put(g, r, c, '0');
+        if (R >= 4) {
+          for (var m = -1; m <= 1; m++) put(g, R - 3, cx + m, chance(0.5) ? 'g' : '6');
         }
         for (var c2 = 0; c2 < C; c2++) {
-          var h = R - 2 + Math.round(Math.sin(c2 * f) * 0.8);
-          for (var r2 = Math.max(0, h); r2 < R; r2++) put(g, r2, c2, '6');
+          if (R >= 4 && at(g, R - 3, c2) === '.' && chance(0.35)) {
+            put(g, R - 3, c2, '2');
+            if (R >= 5) put(g, R - 4, c2, '2');
+          }
         }
         return g;
     } },
     { name: 'ARCANE', key: ['7', '4', '7'], gen: function (C, R) {
-        // Concentric shadow and ice rings around the centre
+        // Concentric shadow and ice rings around a hard rune cross
         var g = blank(C, R), cx = (C - 1) / 2, cy = (R - 1) / 2;
         for (var r = 0; r < R; r++) for (var c = 0; c < C; c++) {
           var d = Math.sqrt(Math.pow((c - cx) / 1.5, 2) + Math.pow(r - cy, 2));
           var ring = Math.floor(d) % 3;
           if (ring === 0) put(g, r, c, '7');
-          else if (ring === 1 && Math.random() < 0.8) put(g, r, c, '4');
+          else if (ring === 1 && chance(0.8)) put(g, r, c, '4');
         }
+        var mx = Math.round(cx), my = Math.round(cy);
+        put(g, my, mx, 'h'); put(g, my - 1, mx, 'h'); put(g, my + 1, mx, 'h');
+        put(g, my, mx - 1, 'h'); put(g, my, mx + 1, 'h');
         return g;
     } },
     { name: 'BAMBOO', key: ['2', '1', '2'], gen: function (C, R) {
-        // Tall grass stalks with water between them
+        // Tall grass stalks with knots, water between them, leaves at the joints
         var g = blank(C, R);
-        for (var c = 0; c < C; c++) for (var r = 0; r < R; r++) {
-          if (c % 2 === 0) { if (Math.random() < 0.85) put(g, r, c, '2'); }
-          else if (Math.random() < 0.12) put(g, r, c, '1');
+        for (var c = 0; c < C; c++) {
+          if (c % 2 === 0) {
+            for (var r = 0; r < R; r++) put(g, r, c, r % 3 === 2 ? 'c' : '2');
+          } else {
+            for (var r2 = 0; r2 < R; r2++) if (chance(0.15)) put(g, r2, c, '1');
+          }
+        }
+        for (var r3 = 0; r3 < R; r3++) for (var c3 = 0; c3 < C; c3 += 2) {
+          if (chance(0.3)) { if (at(g, r3, c3 - 1) === '.') put(g, r3, c3 - 1, '2'); if (at(g, r3, c3 + 1) === '.') put(g, r3, c3 + 1, '2'); }
         }
         return g;
     } },
     { name: 'RIVER', key: ['1', 'S', '2'], gen: function (C, R) {
-        // A winding river with steel banks and grassy shores
-        var g = blank(C, R), slope = (Math.random() - 0.5) * 1.2;
-        var c0 = (C - 1) / 2 + (Math.random() - 0.5) * 2;
+        // A winding channel with steel banks, grassy shores and stones
+        var g = blank(C, R), amp = C * 0.2, f = 0.5 + Math.random() * 0.6, ph = Math.random() * TAU;
+        var cen = (C - 1) / 2;
         for (var r = 0; r < R; r++) for (var c = 0; c < C; c++) {
-          var centre = c0 + slope * (r - (R - 1) / 2);
+          var centre = cen + amp * Math.sin(r * f + ph);
           var d = Math.abs(c - centre);
-          if (d <= 0.9) put(g, r, c, '1');
+          if (d <= 0.9) put(g, r, c, chance(0.1) ? 'g' : '1');
           else if (d <= 1.9) put(g, r, c, 'S');
-          else if (d <= 3) { if (Math.random() < 0.8) put(g, r, c, '2'); }
-          else if (Math.random() < 0.3) put(g, r, c, '6');
+          else if (d <= 3) { if (chance(0.85)) put(g, r, c, '2'); }
+          else if (chance(0.25)) put(g, r, c, '6');
         }
         return g;
     } },
     { name: 'METEOR', key: ['0', '6', 'S'], gen: function (C, R) {
-        // Scattered rock and steel debris with a fiery streak
-        var g = blank(C, R), c0 = Math.floor(Math.random() * C);
+        // A crater of rock with a steel rim, a fiery core, and a streak of fire
+        var g = blank(C, R), cx = (C - 1) / 2, cy = R - 1, rad = Math.max(1.2, C / 3.2);
         for (var r = 0; r < R; r++) for (var c = 0; c < C; c++) {
-          if (Math.random() < 0.35) put(g, r, c, pick(['0', '6', 'S']));
+          var d = Math.sqrt(Math.pow(c - cx, 2) + Math.pow((r - cy) * 1.6, 2));
+          if (Math.abs(d - rad) < 0.7) put(g, r, c, 'S');
+          else if (d < rad - 0.7) put(g, r, c, d < 1.0 ? '0' : '6');
         }
-        for (var k = 0; k < R; k++) put(g, k, (c0 + k) % C, '0');
+        for (var k = 0; k < R; k++) {
+          var sc = C - 1 - k;
+          if (sc >= 0 && at(g, k, sc) === '.') put(g, k, sc, '0');
+        }
         return g;
     } }
+  ];
+
+  // Surprises: about a third of levels get one of these on top of the scene
+  var SURPRISES = [
+    function (g, C, R) {                                    // steel gate across the middle
+      var r = Math.floor(R / 2), gap = randInt(0, C - 1);
+      for (var c = 0; c < C; c++) if (c !== gap) put(g, r, c, 'S');
+    },
+    function (g, C, R) {                                    // treasure: a 2x2 cluster of hard bricks
+      var letter = hardOf(randInt(0, 7)), r0 = randInt(0, Math.max(0, R - 2)), c0 = randInt(0, Math.max(0, C - 2));
+      for (var dr = 0; dr < 2; dr++) for (var dc = 0; dc < 2; dc++) put(g, r0 + dr, c0 + dc, letter);
+    },
+    function (g, C, R) {                                    // loose bricks of random elements
+      for (var r = 0; r < R; r++) for (var c = 0; c < C; c++) {
+        if (at(g, r, c) === '.' && chance(0.15)) put(g, r, c, String(randInt(0, 7)));
+      }
+    },
+    function (g, C, R) {                                    // two steel pillars, bottom row kept open
+      var c1 = randInt(0, C - 1), c2 = randInt(0, C - 1);
+      for (var r = 0; r < R - 1; r++) { put(g, r, c1, 'S'); put(g, r, c2, 'S'); }
+    }
   ];
 
   function breakableCount(g) {
@@ -291,7 +382,8 @@ CLEAR A LEVEL, THEN CHOOSE YOUR PATH. EVERY SCENE IS DIFFERENT.</p>
   function colsFor(s) { return Math.floor((LW + GAP_X) / cellWFor(s)); }
   function maxRowsFor(s) { return Math.floor((BRICK_BOTTOM - BRICK_Y0 + GAP_Y) / cellHFor(s)); }
 
-  // Build the grid for a scene at level n, then make some bricks hard as the run goes on
+  // Build the grid for a scene at level n, add a surprise sometimes,
+  // then make some bricks hard as the run goes on.
   function generateLevel(n, s, biome) {
     var C = colsFor(s), maxR = maxRowsFor(s);
     var R = Math.min(maxR, 3 + Math.floor(n / 3));
@@ -301,14 +393,16 @@ CLEAR A LEVEL, THEN CHOOSE YOUR PATH. EVERY SCENE IS DIFFERENT.</p>
       tries++;
     } while (breakableCount(g) < 6 && tries < 10);
 
+    if (chance(0.35)) pick(SURPRISES)(g, C, R);
+
     var pHard = n >= 2 ? Math.min(0.45, 0.05 + 0.03 * n) : 0;
     var rows = [];
     for (var r = 0; r < R; r++) {
       var str = '';
       for (var c = 0; c < C; c++) {
         var ch = g[r][c];
-        if (ch === '.' || ch === 'S') str += ch;
-        else if (Math.random() < pHard) str += String.fromCharCode(97 + parseInt(ch, 10));
+        if (ch === '.' || ch === 'S' || (ch >= 'a' && ch <= 'h')) str += ch;
+        else if (chance(pHard)) str += hardOf(parseInt(ch, 10));
         else str += ch;
       }
       rows.push(str);
