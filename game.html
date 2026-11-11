@@ -31,7 +31,7 @@
 <h1>ELEMENTAL BREAK 2.0</h1>
 <div id="wrap"><canvas id="c" width="192" height="180"></canvas></div>
 <p id="hint">MOVE: MOUSE / TOUCH / ← → ↑ ↓ (W S) &nbsp; LAUNCH: CLICK / SPACE<br>
-CLEAR THE BRICKS. STEEL NEVER BREAKS. CATCH GOLD FOR A WIDE PADDLE.</p>
+EVERY LEVEL IS DIFFERENT. STEEL NEVER BREAKS. CATCH GOLD FOR A WIDE PADDLE.</p>
 
 <script src="brick-palettes.js"></script>
 <script>
@@ -40,11 +40,12 @@ CLEAR THE BRICKS. STEEL NEVER BREAKS. CATCH GOLD FOR A WIDE PADDLE.</p>
 
   var BP = window.BrickPalettes;
   var PAL = BP.PALETTES;
-  var BW = BP.W, BH = BP.H;
+  var BW = BP.W, BH = BP.H;             // logical brick size; drawn at scale s
 
-  var LW = 192, LH = 180;               // logical resolution (shorter field: less distance to cover)
-  var COLS = 11;
-  var BRICK_X0 = 2, BRICK_Y0 = 30, GAP_X = 1, GAP_Y = 1;
+  var LW = 192, LH = 180;               // logical resolution
+  var GAP_X = 1, GAP_Y = 1;
+  var BRICK_Y0 = 30;                    // top of the brick field
+  var BRICK_BOTTOM = 112;               // bricks never go below this
 
   var PADDLE_W = 32, PADDLE_WIDE = 48, PADDLE_H = 4;
   var PADDLE_BASE_Y = LH - 14;          // resting height of the paddle
@@ -61,78 +62,161 @@ CLEAR THE BRICKS. STEEL NEVER BREAKS. CATCH GOLD FOR A WIDE PADDLE.</p>
   var BOUNCE_STOPS = ['#ffffff', '#ffe27a', '#ff9a2a', '#ff3a6d', '#c040ff'];
   var BOUNCE_FULL = 60;                 // bounces to reach the last stop
 
-  // ---------- Levels ----------
-  // Characters: '.' empty, '0'-'7' normal brick in that palette,
-  //             'H' hard brick (two hits, cracks), 'S' steel (indestructible).
-  var LEVELS = [
-    { name: 'WARM UP', rows: [
-      '01234567012',
-      '12345670123',
-      '23456701234'
-    ] },
-    { name: 'THE GATE', rows: [
-      'SSS.....SSS',
-      'SS.......SS',
-      'S.0101010.S',
-      '..1010101..',
-      '...HHHHH...',
-      '....HHH....'
-    ] },
-    { name: 'PYRAMID', rows: [
-      '.....0.....',
-      '....121....',
-      '...23432...',
-      '..3456543..',
-      '.456767654.',
-      'HHHHHHHHHHH'
-    ] },
-    { name: 'INVADERS', rows: [
-      '..2.....2..',
-      '...2...2...',
-      '..2222222..',
-      '.22.222.22.',
-      '22222222222',
-      '2.2.2.2.2.2',
-      '..5.....5..'
-    ] },
-    { name: 'FORTRESS', rows: [
-      'SSSSSSSSSSS',
-      'S.........S',
-      'S.HHHHHHH.S',
-      'S.H0H3H0H.S',
-      'S.HHHHHHH.S',
-      'S.........S',
-      'SS.......SS'
-    ] },
-    { name: 'RAINFALL', rows: [
-      '0.1.2.3.4.5',
-      '.H.H.H.H.H.',
-      '2.3.4.5.6.7',
-      '..S.S.S.S..',
-      'H.H.H.H.H.H',
-      '.S.S.S.S.S.'
-    ] },
-    { name: 'DIAMOND', rows: [
-      '.....0.....',
-      '....HHH....',
-      '...1.2.3...',
-      '..4H.H.H4..',
-      '.5.6.S.7.5.',
-      '..4H.H.H4..',
-      '...1.2.3...',
-      '....HHH....',
-      '.....0.....'
-    ] },
-    { name: 'MAELSTROM', rows: [
-      'HSHSHSHSHSH',
-      'SHSHSHSHSHS',
-      'H0H1H2H3H4H',
-      'SHSHSHSHSHS',
-      'H7H6H5H4H3H',
-      'SHSHSHSHSHS',
-      'HHHHHHHHHHH'
-    ] }
+  // ---------- Brick size and grid ----------
+  // Bricks start at 2x and shrink to 1x from level 4. Whole-number scales keep pixels crisp.
+  function scaleFor(n) { return n <= 3 ? 2 : 1; }
+  function cellWFor(s) { return BW * s + GAP_X; }
+  function cellHFor(s) { return BH * s + GAP_Y; }
+  function colsFor(s) { return Math.floor((LW + GAP_X) / cellWFor(s)); }
+  function maxRowsFor(s) { return Math.floor((BRICK_BOTTOM - BRICK_Y0 + GAP_Y) / cellHFor(s)); }
+
+  // ---------- Procedural level generation ----------
+  // A grid is an array of rows, each a boolean array of columns. true = brick here.
+  function makeGrid(C, R, fn) {
+    var out = [];
+    for (var r = 0; r < R; r++) {
+      var row = [];
+      for (var c = 0; c < C; c++) row.push(!!fn(r, c));
+      out.push(row);
+    }
+    return out;
+  }
+
+  // Random values, optionally mirrored left to right so the level is symmetric.
+  function noiseGrid(C, R, mirror) {
+    var out = [];
+    for (var r = 0; r < R; r++) {
+      var row = [];
+      for (var c = 0; c < C; c++) row.push(Math.random());
+      if (mirror) for (var c2 = 0; c2 < C; c2++) if (c2 > (C - 1) / 2) row[c2] = row[C - 1 - c2];
+      out.push(row);
+    }
+    return out;
+  }
+
+  var FAMILIES = [
+    { name: 'SCATTER', make: function (C, R) {
+        var d = 0.55 + Math.random() * 0.25, rnd = noiseGrid(C, R, true);
+        return makeGrid(C, R, function (r, c) { return rnd[r][c] < d; });
+    } },
+    { name: 'CHECKER', make: function (C, R) {
+        return makeGrid(C, R, function (r, c) {
+          return (r + c) % 2 === 0 ? Math.random() < 0.95 : Math.random() < 0.25;
+        });
+    } },
+    { name: 'DIAMOND', make: function (C, R) {
+        var cx = (C - 1) / 2, cy = (R - 1) / 2, s = 0.9 + Math.random() * 0.2;
+        return makeGrid(C, R, function (r, c) {
+          return Math.abs(c - cx) / (C / 2 + 0.5) + Math.abs(r - cy) / (R / 2 + 0.5) <= s;
+        });
+    } },
+    { name: 'RING', make: function (C, R) {
+        var cx = (C - 1) / 2, cy = (R - 1) / 2;
+        var inner = 0.35 + Math.random() * 0.25, outer = 0.9 + Math.random() * 0.2;
+        return makeGrid(C, R, function (r, c) {
+          var d = Math.sqrt(Math.pow((c - cx) / (C / 2), 2) + Math.pow((r - cy) / (R / 2), 2));
+          return d > inner && d <= outer;
+        });
+    } },
+    { name: 'WAVE', make: function (C, R) {
+        var f = 0.6 + Math.random() * 0.8, ph = Math.random() * TAU, mid = (R - 1) / 2;
+        return makeGrid(C, R, function (r, c) {
+          var w = mid + Math.sin(c * f + ph) * (R / 3);
+          return Math.abs(r - w) < 0.9 || (Math.abs(r - (w + 2.2)) < 0.6 && Math.random() > 0.4);
+        });
+    } },
+    { name: 'PYRAMID', make: function (C, R) {
+        var cx = (C - 1) / 2, k = (C / 2) / R * 1.1;
+        return makeGrid(C, R, function (r, c) { return Math.abs(c - cx) <= (r + 0.6) * k; });
+    } },
+    { name: 'STRIPES', make: function (C, R) {
+        var par = Math.random() < 0.5 ? 0 : 1;
+        return makeGrid(C, R, function (r, c) {
+          return (r % 2 === par) ? Math.random() < 0.92 : Math.random() < 0.1;
+        });
+    } },
+    { name: 'GATE', make: function (C, R) {
+        var cx = (C - 1) / 2, gap = Math.random() < 0.5 ? 0.5 : 1.0;
+        return makeGrid(C, R, function (r, c) {
+          if (Math.abs(c - cx) <= gap) return r === R - 1 && Math.random() < 0.5;
+          return Math.random() < 0.85;
+        });
+    } },
+    { name: 'COLUMNS', make: function (C, R) {
+        return makeGrid(C, R, function (r, c) {
+          return c % 2 === 0 ? Math.random() < 0.9 : Math.random() < 0.2;
+        });
+    } },
+    { name: 'CAVERN', make: function (C, R) {
+        // Random fill, then smoothing passes make organic caves
+        var g = makeGrid(C, R, function () { return Math.random() < 0.6; });
+        for (var it = 0; it < 3; it++) {
+          var ng = [];
+          for (var r = 0; r < R; r++) {
+            var row = [];
+            for (var c = 0; c < C; c++) {
+              var n = 0;
+              for (var dr = -1; dr <= 1; dr++) for (var dc = -1; dc <= 1; dc++) {
+                if (dr === 0 && dc === 0) continue;
+                var rr = r + dr, cc = c + dc;
+                if (rr >= 0 && rr < R && cc >= 0 && cc < C && g[rr][cc]) n++;
+              }
+              row.push(n >= 5);
+            }
+            ng.push(row);
+          }
+          g = ng;
+        }
+        return g;
+    } },
+    { name: 'INVADERS', make: function (C, R) {
+        var rnd = noiseGrid(C, R, true);
+        return makeGrid(C, R, function (r, c) {
+          return (r % 2 === 0) ? rnd[r][c] < 0.7 : rnd[r][c] < 0.35;
+        });
+    } },
+    { name: 'CROSS', make: function (C, R) {
+        var cx = (C - 1) / 2, cy = (R - 1) / 2;
+        return makeGrid(C, R, function (r, c) {
+          return (Math.abs(c - cx) <= 0.8 || Math.abs(r - cy) <= 0.8) ? Math.random() < 0.95 : false;
+        });
+    } }
   ];
+
+  function countFilled(grid) {
+    var n = 0;
+    for (var r = 0; r < grid.length; r++) for (var c = 0; c < grid[r].length; c++) if (grid[r][c]) n++;
+    return n;
+  }
+
+  // Build a level for level n at brick scale s. Difficulty rises with n:
+  // more rows, more hard bricks, and steel shows up from level 2.
+  function generateLevel(n, s) {
+    var C = colsFor(s), maxR = maxRowsFor(s);
+    var R = Math.min(maxR, 2 + Math.floor((n + 1) / 2));
+    var fam, grid, tries = 0;
+    do {
+      fam = FAMILIES[Math.floor(Math.random() * FAMILIES.length)];
+      grid = fam.make(C, R);
+      tries++;
+    } while (countFilled(grid) < Math.max(6, C * R * 0.4) && tries < 20);
+
+    var pSteel = Math.min(0.14, 0.015 * (n - 1));
+    var pHard = Math.min(0.5, 0.06 + 0.03 * n);
+    var rows = [];
+    for (var r = 0; r < R; r++) {
+      var str = '';
+      for (var c = 0; c < C; c++) {
+        if (!grid[r][c]) { str += '.'; continue; }
+        var u = Math.random();
+        if (u < pSteel) str += 'S';
+        else if (u < pSteel + pHard) str += 'H';
+        else str += String((r + (Math.random() < 0.25 ? 1 : 0)) % 8);
+      }
+      rows.push(str);
+    }
+    return { name: fam.name, cols: C, rows: rows };
+  }
 
   // ---------- Audio: synthesised with Web Audio, no sound files ----------
   var AC = null, MASTER = null;
@@ -328,7 +412,7 @@ CLEAR THE BRICKS. STEEL NEVER BREAKS. CATCH GOLD FOR A WIDE PADDLE.</p>
 
   var state, bricks, ball, paddle, lives, score, time, particles, keys, pointerX;
   var trail, flash, paddleFlash, recoil, shake, combo, lastBreak, comboColor;
-  var level, stateT, curSpeed, pickups, paddleDY;
+  var level, stateT, curSpeed, pickups, paddleDY, levelName;
 
   function hexToRgb(h) {
     return [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
@@ -355,19 +439,25 @@ CLEAR THE BRICKS. STEEL NEVER BREAKS. CATCH GOLD FOR A WIDE PADDLE.</p>
     ball.vx = 0; ball.vy = 0;
   }
 
+  // Generate and lay out level n. Every brick knows its own scale, width and height.
   function loadLevel(n) {
-    var def = LEVELS[(n - 1) % LEVELS.length];
+    var s = scaleFor(n);
+    var lv = generateLevel(n, s);
+    var cellW = cellWFor(s), cellH = cellHFor(s);
+    var x0 = Math.floor((LW - (lv.cols * cellW - GAP_X)) / 2);
+    levelName = lv.name;
     bricks = [];
-    for (var r = 0; r < def.rows.length; r++) {
-      var row = def.rows[r];
-      for (var c = 0; c < COLS; c++) {
+    for (var r = 0; r < lv.rows.length; r++) {
+      var row = lv.rows[r];
+      for (var c = 0; c < lv.cols; c++) {
         var ch = row.charAt(c);
         if (ch === '.' || ch === '') continue;
         var k = {
-          x: BRICK_X0 + c * (BW + GAP_X),
-          y: BRICK_Y0 + r * (BH + GAP_Y),
+          x: x0 + c * cellW,
+          y: BRICK_Y0 + r * cellH,
+          s: s, w: BW * s, h: BH * s,
           alive: true, type: 'n', hp: 1, maxHp: 1, flash: 0,
-          seed: r * COLS + c + n * 97,
+          seed: r * 17 + c + n * 97,
           pal: PAL[(r + c) % PAL.length]
         };
         if (ch === 'S') {
@@ -465,7 +555,7 @@ CLEAR THE BRICKS. STEEL NEVER BREAKS. CATCH GOLD FOR A WIDE PADDLE.</p>
     });
   }
 
-  // Small burst of ball-coloured pixels when the ball hits a wall, paddle or brick.
+  // Small burst of pixels when the ball hits a wall, paddle or brick.
   // nx, ny is the surface normal, so the sparks fly away from the surface.
   function impactSparks(x, y, nx, ny, n, color) {
     var col = color || ballColor(ball.bounces);
@@ -480,7 +570,7 @@ CLEAR THE BRICKS. STEEL NEVER BREAKS. CATCH GOLD FOR A WIDE PADDLE.</p>
   function shatter(k, hx, hy) {
     var pal = k.pal;
     var prof = SHATTER[pal.fx] || SHATTER.ember;
-    var cx = k.x + BW / 2, cy = k.y + BH / 2;
+    var cx = k.x + k.w / 2, cy = k.y + k.h / 2;
     var windDir = ball.vx >= 0 ? 1 : -1;
 
     ringAt(hx, hy, pal.tones[4], 0.25);
@@ -489,7 +579,7 @@ CLEAR THE BRICKS. STEEL NEVER BREAKS. CATCH GOLD FOR A WIDE PADDLE.</p>
       for (var x = 0; x < BW; x++) {
         var idx = BP.tileIndex(x, y, k.seed);
         if (idx < 0) continue;
-        var px = k.x + x + 0.5, py = k.y + y + 0.5;
+        var px = k.x + (x + 0.5) * k.s, py = k.y + (y + 0.5) * k.s;
         var dx = px - hx, dy = py - hy, d = Math.hypot(dx, dy) || 1;
         var sp = prof.spread * (0.5 + Math.random() * 0.8);
         var vx = (dx / d) * sp + (Math.random() - 0.5) * 30;
@@ -657,7 +747,7 @@ CLEAR THE BRICKS. STEEL NEVER BREAKS. CATCH GOLD FOR A WIDE PADDLE.</p>
 
   function brickHit(k, px, py) {
     // Reflect on the axis we entered through, and push the ball out of the brick
-    var wasInX = px + BALL_R > k.x && px - BALL_R < k.x + BW;
+    var wasInX = px + BALL_R > k.x && px - BALL_R < k.x + k.w;
     if (wasInX) { ball.vy = -ball.vy; ball.y = py; }
     else        { ball.vx = -ball.vx; ball.x = px; }
     bounce();
@@ -669,7 +759,7 @@ CLEAR THE BRICKS. STEEL NEVER BREAKS. CATCH GOLD FOR A WIDE PADDLE.</p>
     if (k.type === 's') {
       k.flash = 0.08;
       shake = Math.min(1, shake + 0.15);
-      sfxClank(k.x + BW / 2);
+      sfxClank(k.x + k.w / 2);
       impactSparks(ball.x, ball.y, nx, ny, 3, '#c8cad6');
       return;
     }
@@ -679,7 +769,7 @@ CLEAR THE BRICKS. STEEL NEVER BREAKS. CATCH GOLD FOR A WIDE PADDLE.</p>
       k.hp--;
       k.flash = 0.1;
       shake = Math.min(1, shake + 0.2);
-      sfxTink(k.x + BW / 2);
+      sfxTink(k.x + k.w / 2);
       ringAt(ball.x, ball.y, k.pal.tones[3], 0.18);
       impactSparks(ball.x, ball.y, nx, ny, 3);
       return;
@@ -695,10 +785,10 @@ CLEAR THE BRICKS. STEEL NEVER BREAKS. CATCH GOLD FOR A WIDE PADDLE.</p>
 
     shatter(k, ball.x, ball.y);
     var ladder = Math.pow(2, Math.min(combo - 1, 12) / 6);   // up a semitone per 2 combo hits
-    sfxBreak(k.pal.fx, k.x + BW / 2, pitchMul() * ladder);
+    sfxBreak(k.pal.fx, k.x + k.w / 2, pitchMul() * ladder);
     if (combo >= 3) tone(1568 * ladder, 0.15, 'sine', 0.12, null, 0.05);
     shake = Math.min(1, shake + 0.35);
-    if (Math.random() < PICKUP_CHANCE) spawnPickup(k.x + BW / 2 - 3, k.y + BH / 2 - 2);
+    if (Math.random() < PICKUP_CHANCE) spawnPickup(k.x + k.w / 2 - 3, k.y + k.h / 2 - 2);
   }
 
   // ---------- Main update ----------
@@ -792,8 +882,8 @@ CLEAR THE BRICKS. STEEL NEVER BREAKS. CATCH GOLD FOR A WIDE PADDLE.</p>
     if (ball.x + r > LW) { ball.x = LW - r; ball.vx = -Math.abs(ball.vx); wallHit('R'); }
     if (ball.y - r < 0) { ball.y = r; ball.vy = Math.abs(ball.vy); wallHit('T'); }
 
-    // Paddle: only when moving down and crossing its top edge
-    // Also catches a paddle that rises up onto the ball, so the ball can't slip through
+    // Paddle: when moving down and crossing its top edge.
+    // Also catches a paddle that rises onto the ball, so the ball can't slip through.
     if (ball.vy > 0 &&
         ball.y + r >= paddle.y &&
         (py + r <= paddle.y + 1 || ball.y + r <= paddle.y + PADDLE_H + 3) &&
@@ -812,8 +902,8 @@ CLEAR THE BRICKS. STEEL NEVER BREAKS. CATCH GOLD FOR A WIDE PADDLE.</p>
     for (var b = 0; b < bricks.length; b++) {
       var k = bricks[b];
       if (!k.alive) continue;
-      var cx = Math.max(k.x, Math.min(ball.x, k.x + BW));
-      var cy = Math.max(k.y, Math.min(ball.y, k.y + BH));
+      var cx = Math.max(k.x, Math.min(ball.x, k.x + k.w));
+      var cy = Math.max(k.y, Math.min(ball.y, k.y + k.h));
       var dx = ball.x - cx, dy = ball.y - cy;
       if (dx * dx + dy * dy > r * r) continue;
       brickHit(k, px, py);
@@ -839,32 +929,34 @@ CLEAR THE BRICKS. STEEL NEVER BREAKS. CATCH GOLD FOR A WIDE PADDLE.</p>
   }
 
   // ---------- Draw ----------
+  // Fill a rectangle given in logical brick pixels, scaled to the brick's size.
+  function rect(k, x, y, w, h, color) {
+    g.fillStyle = color;
+    g.fillRect(k.x + x * k.s, k.y + y * k.s, w * k.s, h * k.s);
+  }
+
   function drawSteel(k) {
-    var x = k.x, y = k.y;
-    g.fillStyle = '#22232b'; g.fillRect(x, y, BW, BH);
-    g.fillStyle = '#5b5f70'; g.fillRect(x + 1, y + 1, BW - 2, BH - 2);
-    g.fillStyle = '#9aa0b4'; g.fillRect(x + 1, y + 1, BW - 2, 1);
-    g.fillStyle = '#373a48'; g.fillRect(x + 1, y + BH - 2, BW - 2, 1);
-    g.fillStyle = '#6d7286'; g.fillRect(x + 4 + (k.seed % 5), y + 3, 5, 1);
-    g.fillStyle = '#c8cad6';                       // rivets
-    g.fillRect(x + 2, y + 2, 1, 1); g.fillRect(x + BW - 3, y + 2, 1, 1);
-    g.fillRect(x + 2, y + BH - 3, 1, 1); g.fillRect(x + BW - 3, y + BH - 3, 1, 1);
+    rect(k, 0, 0, BW, BH, '#22232b');
+    rect(k, 1, 1, BW - 2, BH - 2, '#5b5f70');
+    rect(k, 1, 1, BW - 2, 1, '#9aa0b4');
+    rect(k, 1, BH - 2, BW - 2, 1, '#373a48');
+    rect(k, 4 + (k.seed % 5), 3, 5, 1, '#6d7286');
+    rect(k, 2, 2, 1, 1, '#c8cad6'); rect(k, BW - 3, 2, 1, 1, '#c8cad6');   // rivets
+    rect(k, 2, BH - 3, 1, 1, '#c8cad6'); rect(k, BW - 3, BH - 3, 1, 1, '#c8cad6');
     if (k.flash > 0) {
       g.globalAlpha = k.flash / 0.08 * 0.7;
-      g.fillStyle = '#ffffff';
-      g.fillRect(x + 1, y + 1, BW - 2, BH - 2);
+      rect(k, 1, 1, BW - 2, BH - 2, '#ffffff');
       g.globalAlpha = 1;
     }
   }
 
   // Cracks on a damaged hard brick
   function drawCracks(k) {
-    g.fillStyle = '#07070d';
     g.globalAlpha = 0.75;
     for (var y = 1; y < BH - 1; y++) {
       for (var x = 1; x < BW - 1; x++) {
         if ((x * 7 + y * 13 + k.seed) % 17 === 0 || (x * 3 + y * 5 + k.seed) % 23 === 0) {
-          g.fillRect(k.x + x, k.y + y, 1, 1);
+          rect(k, x, y, 1, 1, '#07070d');
         }
       }
     }
@@ -887,12 +979,12 @@ CLEAR THE BRICKS. STEEL NEVER BREAKS. CATCH GOLD FOR A WIDE PADDLE.</p>
       var k = bricks[b];
       if (!k.alive) continue;
       if (k.type === 's') { drawSteel(k); continue; }
-      BP.drawBrick(g, k.pal, k.x, k.y, 1, k.seed, time);
+      BP.drawBrick(g, k.pal, k.x, k.y, k.s, k.seed, time);
       if (k.hp < k.maxHp) drawCracks(k);
       if (k.flash > 0) {
         g.globalAlpha = k.flash / 0.1 * 0.6;
         g.fillStyle = '#ffffff';
-        g.fillRect(k.x, k.y, BW, BH);
+        g.fillRect(k.x, k.y, k.w, k.h);
         g.globalAlpha = 1;
       }
     }
@@ -969,11 +1061,10 @@ CLEAR THE BRICKS. STEEL NEVER BREAKS. CATCH GOLD FOR A WIDE PADDLE.</p>
     // Overlays
     g.textAlign = 'center';
     g.fillStyle = '#ebebf5';
-    var name = LEVELS[(level - 1) % LEVELS.length].name;
     if (state === 'intro') {
       g.fillText('LEVEL ' + level, LW / 2, 112);
       g.fillStyle = col;
-      g.fillText(name, LW / 2, 124);
+      g.fillText(levelName, LW / 2, 124);
     }
     if (state === 'ready') g.fillText('CLICK / SPACE', LW / 2, 112);
     if (state === 'clear') {
