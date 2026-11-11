@@ -20,7 +20,7 @@
   #hint { font-size: 8px; color: var(--muted); margin: 0; text-align: center; line-height: 1.8; }
   #wrap { width: min(100%, 576px); }
   canvas {
-    display: block; width: 100%; height: auto; aspect-ratio: 192 / 240;
+    display: block; width: 100%; height: auto; aspect-ratio: 192 / 180;
     background: var(--bg); image-rendering: pixelated; image-rendering: crisp-edges;
     border: 3px solid #26263d; cursor: none;
   }
@@ -29,8 +29,8 @@
 <body>
 
 <h1>ELEMENTAL BREAK 2.0</h1>
-<div id="wrap"><canvas id="c" width="192" height="240"></canvas></div>
-<p id="hint">MOVE: MOUSE / TOUCH / ← → &nbsp; LAUNCH: CLICK / SPACE<br>
+<div id="wrap"><canvas id="c" width="192" height="180"></canvas></div>
+<p id="hint">MOVE: MOUSE / TOUCH / ← → ↑ ↓ (W S) &nbsp; LAUNCH: CLICK / SPACE<br>
 CLEAR THE BRICKS. STEEL NEVER BREAKS. CATCH GOLD FOR A WIDE PADDLE.</p>
 
 <script src="brick-palettes.js"></script>
@@ -42,11 +42,13 @@ CLEAR THE BRICKS. STEEL NEVER BREAKS. CATCH GOLD FOR A WIDE PADDLE.</p>
   var PAL = BP.PALETTES;
   var BW = BP.W, BH = BP.H;
 
-  var LW = 192, LH = 240;               // logical resolution
+  var LW = 192, LH = 180;               // logical resolution (shorter field: less distance to cover)
   var COLS = 11;
   var BRICK_X0 = 2, BRICK_Y0 = 30, GAP_X = 1, GAP_Y = 1;
 
-  var PADDLE_W = 32, PADDLE_WIDE = 48, PADDLE_H = 4, PADDLE_Y = LH - 14;
+  var PADDLE_W = 32, PADDLE_WIDE = 48, PADDLE_H = 4;
+  var PADDLE_BASE_Y = LH - 14;          // resting height of the paddle
+  var PADDLE_TOP_Y = PADDLE_BASE_Y - 30; // highest the paddle can rise
   var PADDLE_COLOR = { face: '#8d8fa0', hi: '#c8cad6', lo: '#4c4e5c', edge: '#22232b' };
   var BASE_SPEED = 96;                  // logical px per second, level 1
   var BALL_R = 2;
@@ -326,7 +328,7 @@ CLEAR THE BRICKS. STEEL NEVER BREAKS. CATCH GOLD FOR A WIDE PADDLE.</p>
 
   var state, bricks, ball, paddle, lives, score, time, particles, keys, pointerX;
   var trail, flash, paddleFlash, recoil, shake, combo, lastBreak, comboColor;
-  var level, stateT, curSpeed, pickups;
+  var level, stateT, curSpeed, pickups, paddleDY;
 
   function hexToRgb(h) {
     return [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
@@ -344,12 +346,12 @@ CLEAR THE BRICKS. STEEL NEVER BREAKS. CATCH GOLD FOR A WIDE PADDLE.</p>
   }
 
   function newBall() {
-    return { x: paddle.x + paddle.w / 2, y: PADDLE_Y - BALL_R - 1, vx: 0, vy: 0, bounces: 0 };
+    return { x: paddle.x + paddle.w / 2, y: paddle.y - BALL_R - 1, vx: 0, vy: 0, bounces: 0 };
   }
 
   function attachBall() {
     ball.x = paddle.x + paddle.w / 2;
-    ball.y = PADDLE_Y - BALL_R - 1;
+    ball.y = paddle.y - BALL_R - 1;
     ball.vx = 0; ball.vy = 0;
   }
 
@@ -390,7 +392,7 @@ CLEAR THE BRICKS. STEEL NEVER BREAKS. CATCH GOLD FOR A WIDE PADDLE.</p>
   }
 
   function reset(full) {
-    paddle = { x: LW / 2 - PADDLE_W / 2, w: PADDLE_W, y: PADDLE_Y, wideT: 0 };
+    paddle = { x: LW / 2 - PADDLE_W / 2, w: PADDLE_W, y: PADDLE_BASE_Y, wideT: 0 };
     ball = newBall();
     particles = [];
     pickups = [];
@@ -719,11 +721,17 @@ CLEAR THE BRICKS. STEEL NEVER BREAKS. CATCH GOLD FOR A WIDE PADDLE.</p>
     shake = Math.max(0, shake - dt * 3);
     for (var b = 0; b < bricks.length; b++) bricks[b].flash = Math.max(0, bricks[b].flash - dt);
 
-    // Paddle from keyboard and pointer
+    // Paddle from keyboard and pointer: left/right and up/down
     var dir = (keys.ArrowLeft ? -1 : 0) + (keys.ArrowRight ? 1 : 0);
     if (dir !== 0) paddle.x += dir * 140 * dt;
     if (pointerX !== null) paddle.x = pointerX - paddle.w / 2;
     paddle.x = Math.max(0, Math.min(LW - paddle.w, paddle.x));
+
+    var vdir = (keys.ArrowUp || keys.w || keys.W ? -1 : 0) + (keys.ArrowDown || keys.s || keys.S ? 1 : 0);
+    if (vdir !== 0) paddle.y += vdir * 90 * dt;
+    paddle.y += paddleDY;                 // pointer movement, in logical pixels
+    paddleDY = 0;
+    paddle.y = Math.max(PADDLE_TOP_Y, Math.min(PADDLE_BASE_Y, paddle.y));
 
     // Wide paddle timer
     if (paddle.wideT > 0) {
@@ -785,8 +793,10 @@ CLEAR THE BRICKS. STEEL NEVER BREAKS. CATCH GOLD FOR A WIDE PADDLE.</p>
     if (ball.y - r < 0) { ball.y = r; ball.vy = Math.abs(ball.vy); wallHit('T'); }
 
     // Paddle: only when moving down and crossing its top edge
+    // Also catches a paddle that rises up onto the ball, so the ball can't slip through
     if (ball.vy > 0 &&
-        ball.y + r >= paddle.y && py + r <= paddle.y + 1 &&
+        ball.y + r >= paddle.y &&
+        (py + r <= paddle.y + 1 || ball.y + r <= paddle.y + PADDLE_H + 3) &&
         ball.x >= paddle.x - r && ball.x <= paddle.x + paddle.w + r) {
       var hit = (ball.x - (paddle.x + paddle.w / 2)) / (paddle.w / 2);
       hit = Math.max(-1, Math.min(1, hit));
@@ -961,20 +971,20 @@ CLEAR THE BRICKS. STEEL NEVER BREAKS. CATCH GOLD FOR A WIDE PADDLE.</p>
     g.fillStyle = '#ebebf5';
     var name = LEVELS[(level - 1) % LEVELS.length].name;
     if (state === 'intro') {
-      g.fillText('LEVEL ' + level, LW / 2, 120);
+      g.fillText('LEVEL ' + level, LW / 2, 112);
       g.fillStyle = col;
-      g.fillText(name, LW / 2, 134);
+      g.fillText(name, LW / 2, 124);
     }
-    if (state === 'ready') g.fillText('CLICK / SPACE', LW / 2, 150);
+    if (state === 'ready') g.fillText('CLICK / SPACE', LW / 2, 112);
     if (state === 'clear') {
-      g.fillText('LEVEL CLEAR', LW / 2, 120);
+      g.fillText('LEVEL CLEAR', LW / 2, 112);
       g.fillStyle = '#ffe27a';
-      g.fillText('+' + (100 * level) + ' BONUS', LW / 2, 134);
+      g.fillText('+' + (100 * level) + ' BONUS', LW / 2, 124);
     }
     if (state === 'over') {
-      g.fillText('GAME OVER', LW / 2, 120);
+      g.fillText('GAME OVER', LW / 2, 112);
       g.fillStyle = '#8c8ca8';
-      g.fillText('SPACE TO RETRY', LW / 2, 134);
+      g.fillText('SPACE TO RETRY', LW / 2, 124);
     }
     g.textAlign = 'left';
 
@@ -984,25 +994,40 @@ CLEAR THE BRICKS. STEEL NEVER BREAKS. CATCH GOLD FOR A WIDE PADDLE.</p>
   // ---------- Input ----------
   keys = {};
   window.addEventListener('keydown', function (e) {
-    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') { keys[e.key] = true; e.preventDefault(); }
+    if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].indexOf(e.key) !== -1) { keys[e.key] = true; e.preventDefault(); }
+    if (e.key === 'w' || e.key === 'W' || e.key === 's' || e.key === 'S') keys[e.key] = true;
     if (e.code === 'Space') {
       e.preventDefault();
       if (state === 'over') reset(true); else launch();
     }
   });
   window.addEventListener('keyup', function (e) { keys[e.key] = false; });
+  window.addEventListener('blur', function () { keys = {}; });
 
   function toLogicalX(clientX) {
     var rect = cv.getBoundingClientRect();
     return (clientX - rect.left) / rect.width * LW;
   }
 
+  function toLogicalY(clientY) {
+    var rect = cv.getBoundingClientRect();
+    return (clientY - rect.top) / rect.height * LH;
+  }
+
   pointerX = null;
-  cv.addEventListener('pointermove', function (e) { pointerX = toLogicalX(e.clientX); });
-  cv.addEventListener('pointerleave', function () { pointerX = null; });
+  var lastPY = null;
+  paddleDY = 0;
+  cv.addEventListener('pointermove', function (e) {
+    pointerX = toLogicalX(e.clientX);
+    var py = toLogicalY(e.clientY);
+    if (lastPY !== null) paddleDY += py - lastPY;
+    lastPY = py;
+  });
+  cv.addEventListener('pointerleave', function () { pointerX = null; lastPY = null; });
   cv.addEventListener('pointerdown', function (e) {
     e.preventDefault();
     pointerX = toLogicalX(e.clientX);
+    lastPY = toLogicalY(e.clientY);
     if (state === 'over') reset(true); else launch();
   });
 
