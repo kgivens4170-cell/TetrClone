@@ -175,6 +175,77 @@
     }
   };
 
+  // Static element textures: the detail that shows what each brick is made of.
+  // Each returns a tone index for an interior pixel, or -1 to keep the base shading.
+  // They are seeded, so every brick keeps its own pattern from frame to frame.
+  var TEXTURES = {
+    ember: function (x, y, s) {                     // flame tongues rising from the base
+      var h = 1 + Math.floor(hash(x, 0, s) * 4);    // tongue height in pixels
+      var top = H - 2 - h;                          // y of the tongue tip
+      if (y === H - 2) return 1;                    // embers at the base
+      if (y > top) return hash(x, y, s) > 0.85 ? 3 : 2;
+      if (y === top) return hash(x, 1, s) > 0.7 ? 4 : 3;
+      return -1;
+    },
+
+    wave: function (x, y, s) {                      // ripples and a bright surface
+      if (y === 1) return (x + s) % 5 === 0 ? 4 : 3;
+      if (y === H - 2) return 1;
+      if (y % 2 === 0 && (x + s + y) % 4 < 2) return 3;
+      if (y % 2 === 1 && (x + s) % 6 === 0) return 4;
+      return -1;
+    },
+
+    bubble: function (x, y, s) {                    // grass blades and rising bubbles
+      var h = 1 + Math.floor(hash(x, 2, s) * 3);
+      if (y === H - 2) return 1;
+      if (y >= H - 2 - h && hash(x, 3, s) > 0.3) return y === H - 2 - h ? 3 : 2;
+      if (hash(x, y, s) > 0.93) return 4;
+      return -1;
+    },
+
+    thunder: function (x, y, s) {                   // a jagged bolt across the face
+      var yb = 2 + ((x * 3 + s) % 3);
+      if (y === yb) return 4;
+      if (Math.abs(y - yb) === 1 && hash(x, y, s) > 0.5) return 3;
+      if (y === H - 2) return 1;
+      return -1;
+    },
+
+    glacier: function (x, y, s) {                   // cut facets and glints
+      if (hash(x, y, s) > 0.93) return 4;
+      if ((x + 2 * y + s) % 6 === 0) return 3;
+      if ((x - y + s) % 5 === 0) return 1;
+      return -1;
+    },
+
+    gale: function (x, y, s) {                      // wind swirls and leaf flecks
+      var wave = 2 + Math.round(Math.sin(x * 0.9 + s * 0.7));
+      if (y === wave) return 3;
+      if (y === wave + 1 && (x + s) % 3 === 0) return 4;
+      if (hash(x, y, s) > 0.9) return 4;
+      if (y === H - 2) return 1;
+      return -1;
+    },
+
+    terra: function (x, y, s) {                     // stone blocks with mortar, grains and cracks
+      var off = (y % 2) * 4;
+      if (y === 3 || (x + off + s) % 8 === 0) return 1;
+      if (hash(x, y, s) > 0.9) return 3;
+      if (hash(x, y, s) < 0.05) return 0;
+      return -1;
+    },
+
+    void: function (x, y, s) {                      // dark matter with stars and violet wisps
+      if (hash(x, y, s) > 0.92) return 4;
+      if ((x + y + s) % 7 === 0) return 2;
+      if (hash(x, y, s + 9) < 0.15) return 0;
+      return 1;
+    }
+  };
+
+  function noTexture() { return -1; }
+
   // Static shape and bevel of the brick. Returns -1 for transparent corners.
   function tileIndex(x, y, s) {
     var edgeX = (x === 0 || x === W - 1);
@@ -200,13 +271,16 @@
   function drawBrick(ctx, palette, px, py, scale, seed, t) {
     var tones = palette.tones;
     var fx = FX[palette.fx] || function () { return -1; };
+    var tex = TEXTURES[palette.fx] || noTexture;
     var s = seed | 0;
     for (var y = 0; y < H; y++) {
       for (var x = 0; x < W; x++) {
         var idx = tileIndex(x, y, s);
         if (idx < 0) continue;
         if (idx > 0) {
-          var o = fx(x, y, t, s);
+          var tx = tex(x, y, s);            // static element detail
+          if (tx >= 0) idx = tx;
+          var o = fx(x, y, t, s);           // animation on top
           if (o >= 0) idx = o;
         }
         ctx.fillStyle = tones[idx];
