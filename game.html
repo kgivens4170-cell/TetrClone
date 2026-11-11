@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
-<title>Elemental Break</title>
+<title>Elemental Break 2.0</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
 <style>
@@ -28,10 +28,10 @@
 </head>
 <body>
 
-<h1>ELEMENTAL BREAK</h1>
+<h1>ELEMENTAL BREAK 2.0</h1>
 <div id="wrap"><canvas id="c" width="192" height="240"></canvas></div>
 <p id="hint">MOVE: MOUSE / TOUCH / ← → &nbsp; LAUNCH: CLICK / SPACE<br>
-EVERY HIT SINGS. THE BALL WARMS WITH EVERY BOUNCE.</p>
+CLEAR THE BRICKS. STEEL NEVER BREAKS. CATCH GOLD FOR A WIDE PADDLE.</p>
 
 <script src="brick-palettes.js"></script>
 <script>
@@ -43,19 +43,94 @@ EVERY HIT SINGS. THE BALL WARMS WITH EVERY BOUNCE.</p>
   var BW = BP.W, BH = BP.H;
 
   var LW = 192, LH = 240;               // logical resolution
-  var COLS = 11, ROWS = 5;
+  var COLS = 11;
   var BRICK_X0 = 2, BRICK_Y0 = 30, GAP_X = 1, GAP_Y = 1;
 
-  var PADDLE_W = 32, PADDLE_H = 4, PADDLE_Y = LH - 14;
+  var PADDLE_W = 32, PADDLE_WIDE = 48, PADDLE_H = 4, PADDLE_Y = LH - 14;
   var PADDLE_COLOR = { face: '#8d8fa0', hi: '#c8cad6', lo: '#4c4e5c', edge: '#22232b' };
-  var BASE_SPEED = 96;                  // logical px per second
+  var BASE_SPEED = 96;                  // logical px per second, level 1
   var BALL_R = 2;
   var TAU = Math.PI * 2;
   var COMBO_WINDOW = 1.2;               // seconds between breaks to keep a combo
+  var INTRO_T = 1.8, CLEAR_T = 2.0;
+  var PICKUP_CHANCE = 0.12, WIDE_TIME = 8;
 
   // Ball colour climbs through these stops as it bounces.
   var BOUNCE_STOPS = ['#ffffff', '#ffe27a', '#ff9a2a', '#ff3a6d', '#c040ff'];
   var BOUNCE_FULL = 60;                 // bounces to reach the last stop
+
+  // ---------- Levels ----------
+  // Characters: '.' empty, '0'-'7' normal brick in that palette,
+  //             'H' hard brick (two hits, cracks), 'S' steel (indestructible).
+  var LEVELS = [
+    { name: 'WARM UP', rows: [
+      '01234567012',
+      '12345670123',
+      '23456701234'
+    ] },
+    { name: 'THE GATE', rows: [
+      'SSS.....SSS',
+      'SS.......SS',
+      'S.0101010.S',
+      '..1010101..',
+      '...HHHHH...',
+      '....HHH....'
+    ] },
+    { name: 'PYRAMID', rows: [
+      '.....0.....',
+      '....121....',
+      '...23432...',
+      '..3456543..',
+      '.456767654.',
+      'HHHHHHHHHHH'
+    ] },
+    { name: 'INVADERS', rows: [
+      '..2.....2..',
+      '...2...2...',
+      '..2222222..',
+      '.22.222.22.',
+      '22222222222',
+      '2.2.2.2.2.2',
+      '..5.....5..'
+    ] },
+    { name: 'FORTRESS', rows: [
+      'SSSSSSSSSSS',
+      'S.........S',
+      'S.HHHHHHH.S',
+      'S.H0H3H0H.S',
+      'S.HHHHHHH.S',
+      'S.........S',
+      'SS.......SS'
+    ] },
+    { name: 'RAINFALL', rows: [
+      '0.1.2.3.4.5',
+      '.H.H.H.H.H.',
+      '2.3.4.5.6.7',
+      '..S.S.S.S..',
+      'H.H.H.H.H.H',
+      '.S.S.S.S.S.'
+    ] },
+    { name: 'DIAMOND', rows: [
+      '.....0.....',
+      '....HHH....',
+      '...1.2.3...',
+      '..4H.H.H4..',
+      '.5.6.S.7.5.',
+      '..4H.H.H4..',
+      '...1.2.3...',
+      '....HHH....',
+      '.....0.....'
+    ] },
+    { name: 'MAELSTROM', rows: [
+      'HSHSHSHSHSH',
+      'SHSHSHSHSHS',
+      'H0H1H2H3H4H',
+      'SHSHSHSHSHS',
+      'H7H6H5H4H3H',
+      'SHSHSHSHSHS',
+      'HHHHHHHHHHH'
+    ] }
+  ];
 
   // ---------- Audio: synthesised with Web Audio, no sound files ----------
   var AC = null, MASTER = null;
@@ -124,7 +199,6 @@ EVERY HIT SINGS. THE BALL WARMS WITH EVERY BOUNCE.</p>
     return Math.max(-0.8, Math.min(0.8, (x / LW) * 2 - 1));
   }
 
-  // Every hit: walls, paddle, and bricks.
   function sfxWall(x) {
     var m = pitchMul();
     PAN = panFor(x);
@@ -140,6 +214,25 @@ EVERY HIT SINGS. THE BALL WARMS WITH EVERY BOUNCE.</p>
     tone(f, 0.16, 'triangle', 0.3, f * 1.6);
     tone(f * 2.01, 0.1, 'sine', 0.1, null, 0.01);
     noise(0.03, 0.15, 'bandpass', 3000, 1500, 2);
+    PAN = 0;
+  }
+
+  // Hard brick: a glassy tink on each hit that doesn't break it.
+  function sfxTink(x) {
+    var m = pitchMul();
+    PAN = panFor(x);
+    tone(1250 * m, 0.07, 'triangle', 0.2, 900 * m);
+    noise(0.02, 0.1, 'highpass', 7000, 7000, 1);
+    PAN = 0;
+  }
+
+  // Steel: a heavy metallic clank.
+  function sfxClank(x) {
+    var m = pitchMul();
+    PAN = panFor(x);
+    tone(880 * m, 0.14, 'square', 0.08, 600 * m);
+    tone(1320 * m, 0.1, 'triangle', 0.06, null, 0.01);
+    noise(0.03, 0.22, 'bandpass', 2500, 1200, 2);
     PAN = 0;
   }
 
@@ -199,6 +292,12 @@ EVERY HIT SINGS. THE BALL WARMS WITH EVERY BOUNCE.</p>
     noise(0.25, 0.15, 'bandpass', 500, 2500, 1);
   }
 
+  function sfxIntro() {
+    tone(330, 0.15, 'triangle', 0.18);
+    tone(440, 0.2, 'triangle', 0.18, null, 0.12);
+    tone(660, 0.25, 'triangle', 0.16, null, 0.24);
+  }
+
   function sfxLoss() {
     tone(440, 0.7, 'sawtooth', 0.12, 70);
     tone(330, 0.7, 'triangle', 0.15, 55, 0.1);
@@ -209,9 +308,15 @@ EVERY HIT SINGS. THE BALL WARMS WITH EVERY BOUNCE.</p>
     tone(261.6, 1.2, 'triangle', 0.12, 65, 0.15);
   }
 
-  function sfxWin() {
+  function sfxClear() {
     var notes = [523, 659, 784, 1047];
     for (var i = 0; i < notes.length; i++) tone(notes[i], 0.22, 'triangle', 0.2, null, i * 0.09);
+  }
+
+  function sfxPower() {
+    tone(523, 0.1, 'square', 0.12);
+    tone(784, 0.1, 'square', 0.12, null, 0.08);
+    tone(1046, 0.18, 'square', 0.12, null, 0.16);
   }
 
   // ---------- Game state ----------
@@ -221,6 +326,7 @@ EVERY HIT SINGS. THE BALL WARMS WITH EVERY BOUNCE.</p>
 
   var state, bricks, ball, paddle, lives, score, time, particles, keys, pointerX;
   var trail, flash, paddleFlash, recoil, shake, combo, lastBreak, comboColor;
+  var level, stateT, curSpeed, pickups;
 
   function hexToRgb(h) {
     return [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
@@ -238,13 +344,56 @@ EVERY HIT SINGS. THE BALL WARMS WITH EVERY BOUNCE.</p>
   }
 
   function newBall() {
-    return { x: paddle.x + PADDLE_W / 2, y: PADDLE_Y - BALL_R - 1, vx: 0, vy: 0, bounces: 0 };
+    return { x: paddle.x + paddle.w / 2, y: PADDLE_Y - BALL_R - 1, vx: 0, vy: 0, bounces: 0 };
+  }
+
+  function attachBall() {
+    ball.x = paddle.x + paddle.w / 2;
+    ball.y = PADDLE_Y - BALL_R - 1;
+    ball.vx = 0; ball.vy = 0;
+  }
+
+  function loadLevel(n) {
+    var def = LEVELS[(n - 1) % LEVELS.length];
+    bricks = [];
+    for (var r = 0; r < def.rows.length; r++) {
+      var row = def.rows[r];
+      for (var c = 0; c < COLS; c++) {
+        var ch = row.charAt(c);
+        if (ch === '.' || ch === '') continue;
+        var k = {
+          x: BRICK_X0 + c * (BW + GAP_X),
+          y: BRICK_Y0 + r * (BH + GAP_Y),
+          alive: true, type: 'n', hp: 1, maxHp: 1, flash: 0,
+          seed: r * COLS + c + n * 97,
+          pal: PAL[(r + c) % PAL.length]
+        };
+        if (ch === 'S') {
+          k.type = 's';
+        } else if (ch === 'H') {
+          k.type = 'h'; k.hp = 2; k.maxHp = 2;
+          k.pal = PAL[(r * 3 + c) % PAL.length];
+        } else {
+          k.pal = PAL[parseInt(ch, 10) % PAL.length];
+        }
+        bricks.push(k);
+      }
+    }
+    // Each level is a little faster than the one before, capped at 1.8x
+    curSpeed = Math.min(BASE_SPEED * (1 + 0.06 * (n - 1)), BASE_SPEED * 1.8);
+  }
+
+  function setPaddleWidth(w) {
+    var centre = paddle.x + paddle.w / 2;
+    paddle.w = w;
+    paddle.x = Math.max(0, Math.min(LW - w, centre - w / 2));
   }
 
   function reset(full) {
-    paddle = { x: LW / 2 - PADDLE_W / 2, w: PADDLE_W, h: PADDLE_H, y: PADDLE_Y, vx: 0 };
+    paddle = { x: LW / 2 - PADDLE_W / 2, w: PADDLE_W, y: PADDLE_Y, wideT: 0 };
     ball = newBall();
     particles = [];
+    pickups = [];
     trail = [];
     flash = { L: 0, R: 0, T: 0 };
     paddleFlash = 0;
@@ -252,22 +401,16 @@ EVERY HIT SINGS. THE BALL WARMS WITH EVERY BOUNCE.</p>
     shake = 0;
     combo = 0;
     lastBreak = -10;
-    state = 'ready';
     if (full) {
+      level = 1;
       lives = 3;
       score = 0;
-      bricks = [];
-      for (var r = 0; r < ROWS; r++) {
-        for (var c = 0; c < COLS; c++) {
-          bricks.push({
-            x: BRICK_X0 + c * (BW + GAP_X),
-            y: BRICK_Y0 + r * (BH + GAP_Y),
-            alive: true,
-            pal: PAL[(r + c) % PAL.length],
-            seed: r * COLS + c
-          });
-        }
-      }
+      loadLevel(1);
+      state = 'intro';
+      stateT = INTRO_T;
+      sfxIntro();
+    } else {
+      state = 'ready';
     }
   }
 
@@ -275,8 +418,8 @@ EVERY HIT SINGS. THE BALL WARMS WITH EVERY BOUNCE.</p>
     audio();                              // unlocks sound on the first user gesture
     if (state !== 'ready') return;
     var ang = (Math.random() * 0.6 - 0.3);            // slight random start angle
-    ball.vx = Math.sin(ang) * BASE_SPEED;
-    ball.vy = -Math.cos(ang) * BASE_SPEED;
+    ball.vx = Math.sin(ang) * curSpeed;
+    ball.vy = -Math.cos(ang) * curSpeed;
     state = 'play';
     sfxLaunch();
   }
@@ -313,10 +456,17 @@ EVERY HIT SINGS. THE BALL WARMS WITH EVERY BOUNCE.</p>
     });
   }
 
-  // Small burst of ball-coloured pixels when the ball hits a wall or the paddle.
+  function ringAt(x, y, color, life) {
+    pushParticle({
+      x: x, y: y, vx: 0, vy: 0, g: 0, drag: 1, life: life, max: life,
+      color: color, kind: 'ring', pull: 0, cx: x, cy: y, wob: 0
+    });
+  }
+
+  // Small burst of ball-coloured pixels when the ball hits a wall, paddle or brick.
   // nx, ny is the surface normal, so the sparks fly away from the surface.
-  function impactSparks(x, y, nx, ny, n) {
-    var col = ballColor(ball.bounces);
+  function impactSparks(x, y, nx, ny, n, color) {
+    var col = color || ballColor(ball.bounces);
     for (var i = 0; i < n; i++) {
       var s = 40 + Math.random() * 60;
       spark(x, y, (nx + (Math.random() - 0.5) * 1.2) * s, (ny + (Math.random() - 0.5) * 1.2) * s,
@@ -331,11 +481,7 @@ EVERY HIT SINGS. THE BALL WARMS WITH EVERY BOUNCE.</p>
     var cx = k.x + BW / 2, cy = k.y + BH / 2;
     var windDir = ball.vx >= 0 ? 1 : -1;
 
-    // Impact ring: a quick expanding outline at the hit point
-    pushParticle({
-      x: hx, y: hy, vx: 0, vy: 0, g: 0, drag: 1, life: 0.25, max: 0.25,
-      color: pal.tones[4], kind: 'ring', pull: 0, cx: hx, cy: hy, wob: 0
-    });
+    ringAt(hx, hy, pal.tones[4], 0.25);
 
     for (var y = 0; y < BH; y++) {
       for (var x = 0; x < BW; x++) {
@@ -457,6 +603,38 @@ EVERY HIT SINGS. THE BALL WARMS WITH EVERY BOUNCE.</p>
     g.globalAlpha = 1;
   }
 
+  // ---------- Power-ups ----------
+  function spawnPickup(x, y) {
+    pickups.push({ x: x, y: y, vy: 38, t: 0 });
+  }
+
+  function updatePickups(dt) {
+    for (var i = pickups.length - 1; i >= 0; i--) {
+      var p = pickups[i];
+      p.y += p.vy * dt;
+      p.t += dt;
+      if (p.y > LH) { pickups.splice(i, 1); continue; }
+      if (p.y + 4 >= paddle.y && p.y <= paddle.y + PADDLE_H &&
+          p.x + 6 >= paddle.x && p.x <= paddle.x + paddle.w) {
+        setPaddleWidth(PADDLE_WIDE);
+        paddle.wideT = WIDE_TIME;
+        impactSparks(p.x + 3, paddle.y, 0, -1, 8, '#ffe27a');
+        sfxPower();
+        pickups.splice(i, 1);
+      }
+    }
+  }
+
+  function drawPickups() {
+    for (var i = 0; i < pickups.length; i++) {
+      var p = pickups[i];
+      var x = Math.round(p.x), y = Math.round(p.y);
+      g.fillStyle = '#ff9a2a'; g.fillRect(x, y, 6, 4);
+      g.fillStyle = (Math.floor(p.t * 8) % 2) ? '#ff3a6d' : '#ffe27a';
+      g.fillRect(x + 1, y + 1, 4, 2);
+    }
+  }
+
   // ---------- Hits ----------
   function wallHit(side) {
     bounce();
@@ -476,6 +654,36 @@ EVERY HIT SINGS. THE BALL WARMS WITH EVERY BOUNCE.</p>
   }
 
   function brickHit(k, px, py) {
+    // Reflect on the axis we entered through, and push the ball out of the brick
+    var wasInX = px + BALL_R > k.x && px - BALL_R < k.x + BW;
+    if (wasInX) { ball.vy = -ball.vy; ball.y = py; }
+    else        { ball.vx = -ball.vx; ball.x = px; }
+    bounce();
+
+    var nx = wasInX ? 0 : (ball.vx > 0 ? 1 : -1);
+    var ny = wasInX ? (ball.vy > 0 ? 1 : -1) : 0;
+
+    // Steel: indestructible
+    if (k.type === 's') {
+      k.flash = 0.08;
+      shake = Math.min(1, shake + 0.15);
+      sfxClank(k.x + BW / 2);
+      impactSparks(ball.x, ball.y, nx, ny, 3, '#c8cad6');
+      return;
+    }
+
+    // Hard brick: takes a hit and cracks
+    if (k.type === 'h' && k.hp > 1) {
+      k.hp--;
+      k.flash = 0.1;
+      shake = Math.min(1, shake + 0.2);
+      sfxTink(k.x + BW / 2);
+      ringAt(ball.x, ball.y, k.pal.tones[3], 0.18);
+      impactSparks(ball.x, ball.y, nx, ny, 3);
+      return;
+    }
+
+    // Break it
     k.alive = false;
     var now = time;
     combo = (now - lastBreak < COMBO_WINDOW) ? combo + 1 : 1;
@@ -483,21 +691,22 @@ EVERY HIT SINGS. THE BALL WARMS WITH EVERY BOUNCE.</p>
     comboColor = k.pal.tones[4];
     score += 10 * combo;
 
-    // Reflect on the axis we entered through
-    var wasInX = px + BALL_R > k.x && px - BALL_R < k.x + BW;
-    if (wasInX) ball.vy = -ball.vy; else ball.vx = -ball.vx;
-    // Push the ball out so it cannot re-hit next substep
-    if (wasInX) ball.y = py; else ball.x = px;
-
     shatter(k, ball.x, ball.y);
     var ladder = Math.pow(2, Math.min(combo - 1, 12) / 6);   // up a semitone per 2 combo hits
     sfxBreak(k.pal.fx, k.x + BW / 2, pitchMul() * ladder);
     if (combo >= 3) tone(1568 * ladder, 0.15, 'sine', 0.12, null, 0.05);
     shake = Math.min(1, shake + 0.35);
-    bounce();
+    if (Math.random() < PICKUP_CHANCE) spawnPickup(k.x + BW / 2 - 3, k.y + BH / 2 - 2);
   }
 
   // ---------- Main update ----------
+  function levelCleared() {
+    for (var i = 0; i < bricks.length; i++) {
+      if (bricks[i].type !== 's' && bricks[i].alive) return false;
+    }
+    return true;
+  }
+
   function step(dt) {
     time += dt;
 
@@ -508,24 +717,51 @@ EVERY HIT SINGS. THE BALL WARMS WITH EVERY BOUNCE.</p>
     paddleFlash = Math.max(0, paddleFlash - dt);
     recoil = Math.max(0, recoil - dt);
     shake = Math.max(0, shake - dt * 3);
+    for (var b = 0; b < bricks.length; b++) bricks[b].flash = Math.max(0, bricks[b].flash - dt);
 
-    // Paddle from keyboard
+    // Paddle from keyboard and pointer
     var dir = (keys.ArrowLeft ? -1 : 0) + (keys.ArrowRight ? 1 : 0);
     if (dir !== 0) paddle.x += dir * 140 * dt;
-    if (pointerX !== null) paddle.x = pointerX - PADDLE_W / 2;
-    paddle.x = Math.max(0, Math.min(LW - PADDLE_W, paddle.x));
+    if (pointerX !== null) paddle.x = pointerX - paddle.w / 2;
+    paddle.x = Math.max(0, Math.min(LW - paddle.w, paddle.x));
+
+    // Wide paddle timer
+    if (paddle.wideT > 0) {
+      paddle.wideT -= dt;
+      if (paddle.wideT <= 0) setPaddleWidth(PADDLE_W);
+    }
 
     updateParticles(dt);
+    updatePickups(dt);
 
+    if (state === 'intro') {
+      attachBall();
+      stateT -= dt;
+      if (stateT <= 0) state = 'ready';
+      return;
+    }
+    if (state === 'clear') {
+      attachBall();
+      stateT -= dt;
+      if (stateT <= 0) {
+        level++;
+        loadLevel(level);
+        ball = newBall();
+        pickups = [];
+        state = 'intro';
+        stateT = INTRO_T;
+        sfxIntro();
+      }
+      return;
+    }
     if (state === 'ready') {
-      ball.x = paddle.x + PADDLE_W / 2;
-      ball.y = PADDLE_Y - BALL_R - 1;
+      attachBall();
       trail.length = 0;
       return;
     }
     if (state !== 'play') return;
 
-    var dist = BASE_SPEED * dt;
+    var dist = curSpeed * dt;
     var n = Math.max(1, Math.ceil(dist / 0.5));
     var sub = dt / n;
     for (var i = 0; i < n; i++) {
@@ -551,8 +787,8 @@ EVERY HIT SINGS. THE BALL WARMS WITH EVERY BOUNCE.</p>
     // Paddle: only when moving down and crossing its top edge
     if (ball.vy > 0 &&
         ball.y + r >= paddle.y && py + r <= paddle.y + 1 &&
-        ball.x >= paddle.x - r && ball.x <= paddle.x + PADDLE_W + r) {
-      var hit = (ball.x - (paddle.x + PADDLE_W / 2)) / (PADDLE_W / 2);
+        ball.x >= paddle.x - r && ball.x <= paddle.x + paddle.w + r) {
+      var hit = (ball.x - (paddle.x + paddle.w / 2)) / (paddle.w / 2);
       hit = Math.max(-1, Math.min(1, hit));
       var ang = hit * 1.0;                              // up to ~57 degrees
       var speed = Math.hypot(ball.vx, ball.vy);
@@ -562,7 +798,7 @@ EVERY HIT SINGS. THE BALL WARMS WITH EVERY BOUNCE.</p>
       paddleHit(hit);
     }
 
-    // Bricks
+    // Bricks (steel included, so it bounces the ball)
     for (var b = 0; b < bricks.length; b++) {
       var k = bricks[b];
       if (!k.alive) continue;
@@ -574,9 +810,12 @@ EVERY HIT SINGS. THE BALL WARMS WITH EVERY BOUNCE.</p>
       break;
     }
 
-    if (bricks.every(function (k) { return !k.alive; })) {
-      state = 'won';
-      sfxWin();
+    if (levelCleared()) {
+      state = 'clear';
+      stateT = CLEAR_T;
+      score += 100 * level;
+      lives = Math.min(5, lives + 1);
+      sfxClear();
       return;
     }
 
@@ -590,6 +829,38 @@ EVERY HIT SINGS. THE BALL WARMS WITH EVERY BOUNCE.</p>
   }
 
   // ---------- Draw ----------
+  function drawSteel(k) {
+    var x = k.x, y = k.y;
+    g.fillStyle = '#22232b'; g.fillRect(x, y, BW, BH);
+    g.fillStyle = '#5b5f70'; g.fillRect(x + 1, y + 1, BW - 2, BH - 2);
+    g.fillStyle = '#9aa0b4'; g.fillRect(x + 1, y + 1, BW - 2, 1);
+    g.fillStyle = '#373a48'; g.fillRect(x + 1, y + BH - 2, BW - 2, 1);
+    g.fillStyle = '#6d7286'; g.fillRect(x + 4 + (k.seed % 5), y + 3, 5, 1);
+    g.fillStyle = '#c8cad6';                       // rivets
+    g.fillRect(x + 2, y + 2, 1, 1); g.fillRect(x + BW - 3, y + 2, 1, 1);
+    g.fillRect(x + 2, y + BH - 3, 1, 1); g.fillRect(x + BW - 3, y + BH - 3, 1, 1);
+    if (k.flash > 0) {
+      g.globalAlpha = k.flash / 0.08 * 0.7;
+      g.fillStyle = '#ffffff';
+      g.fillRect(x + 1, y + 1, BW - 2, BH - 2);
+      g.globalAlpha = 1;
+    }
+  }
+
+  // Cracks on a damaged hard brick
+  function drawCracks(k) {
+    g.fillStyle = '#07070d';
+    g.globalAlpha = 0.75;
+    for (var y = 1; y < BH - 1; y++) {
+      for (var x = 1; x < BW - 1; x++) {
+        if ((x * 7 + y * 13 + k.seed) % 17 === 0 || (x * 3 + y * 5 + k.seed) % 23 === 0) {
+          g.fillRect(k.x + x, k.y + y, 1, 1);
+        }
+      }
+    }
+    g.globalAlpha = 1;
+  }
+
   function draw() {
     var ox = 0, oy = 0;
     if (shake > 0) {
@@ -604,9 +875,19 @@ EVERY HIT SINGS. THE BALL WARMS WITH EVERY BOUNCE.</p>
     // Bricks
     for (var b = 0; b < bricks.length; b++) {
       var k = bricks[b];
-      if (k.alive) BP.drawBrick(g, k.pal, k.x, k.y, 1, k.seed, time);
+      if (!k.alive) continue;
+      if (k.type === 's') { drawSteel(k); continue; }
+      BP.drawBrick(g, k.pal, k.x, k.y, 1, k.seed, time);
+      if (k.hp < k.maxHp) drawCracks(k);
+      if (k.flash > 0) {
+        g.globalAlpha = k.flash / 0.1 * 0.6;
+        g.fillStyle = '#ffffff';
+        g.fillRect(k.x, k.y, BW, BH);
+        g.globalAlpha = 1;
+      }
     }
 
+    drawPickups();
     drawParticles();
 
     var col = ballColor(ball.bounces);
@@ -620,16 +901,21 @@ EVERY HIT SINGS. THE BALL WARMS WITH EVERY BOUNCE.</p>
 
     // Paddle: grey pixel bevel, flashes in ball colour on hit, recoils, gloss shine
     var x = Math.round(paddle.x), y = paddle.y + (recoil > 0 ? 1 : 0);
+    var pw = paddle.w;
     var face = paddleFlash > 0 ? col : PADDLE_COLOR.face;
-    g.fillStyle = '#0b0b12'; g.fillRect(x + 1, y + PADDLE_H, PADDLE_W - 2, 1);   // shadow
-    g.fillStyle = PADDLE_COLOR.edge; g.fillRect(x, y, PADDLE_W, PADDLE_H);
-    g.fillStyle = face;              g.fillRect(x + 1, y + 1, PADDLE_W - 2, PADDLE_H - 2);
-    g.fillStyle = PADDLE_COLOR.hi;   g.fillRect(x + 1, y + 1, PADDLE_W - 2, 1);
-    g.fillStyle = PADDLE_COLOR.lo;   g.fillRect(x + 1, y + PADDLE_H - 2, PADDLE_W - 2, 1);
+    g.fillStyle = '#0b0b12'; g.fillRect(x + 1, y + PADDLE_H, pw - 2, 1);   // shadow
+    g.fillStyle = PADDLE_COLOR.edge; g.fillRect(x, y, pw, PADDLE_H);
+    g.fillStyle = face;              g.fillRect(x + 1, y + 1, pw - 2, PADDLE_H - 2);
+    g.fillStyle = PADDLE_COLOR.hi;   g.fillRect(x + 1, y + 1, pw - 2, 1);
+    g.fillStyle = PADDLE_COLOR.lo;   g.fillRect(x + 1, y + PADDLE_H - 2, pw - 2, 1);
     if (paddleFlash <= 0) {
-      var shineX = x + 3 + Math.floor(((time * 22) % (PADDLE_W - 8)));
+      var shineX = x + 3 + Math.floor((time * 22) % (pw - 8));
       g.fillStyle = '#eef0f8';
       g.fillRect(shineX, y + 1, 2, 1);
+    }
+    if (paddle.wideT > 0 && paddle.wideT < 2 && Math.floor(time * 10) % 2) {
+      g.fillStyle = '#ffe27a';                       // warns the wide paddle is ending
+      g.fillRect(x, y - 1, pw, 1);
     }
 
     // Ball trail: fading ghost pixels
@@ -657,6 +943,8 @@ EVERY HIT SINGS. THE BALL WARMS WITH EVERY BOUNCE.</p>
     g.textBaseline = 'top';
     g.textAlign = 'left';
     g.fillText('SCORE ' + score, 4, 4);
+    g.textAlign = 'center';
+    g.fillText('LV ' + level, LW / 2, 4);
     g.textAlign = 'right';
     g.fillText('LIVES ' + lives, LW - 4, 4);
     g.textAlign = 'left';
@@ -671,16 +959,26 @@ EVERY HIT SINGS. THE BALL WARMS WITH EVERY BOUNCE.</p>
     // Overlays
     g.textAlign = 'center';
     g.fillStyle = '#ebebf5';
+    var name = LEVELS[(level - 1) % LEVELS.length].name;
+    if (state === 'intro') {
+      g.fillText('LEVEL ' + level, LW / 2, 120);
+      g.fillStyle = col;
+      g.fillText(name, LW / 2, 134);
+    }
     if (state === 'ready') g.fillText('CLICK / SPACE', LW / 2, 150);
-    if (state === 'over') g.fillText('GAME OVER', LW / 2, 150);
-    if (state === 'won') g.fillText('CLEARED', LW / 2, 150);
+    if (state === 'clear') {
+      g.fillText('LEVEL CLEAR', LW / 2, 120);
+      g.fillStyle = '#ffe27a';
+      g.fillText('+' + (100 * level) + ' BONUS', LW / 2, 134);
+    }
+    if (state === 'over') {
+      g.fillText('GAME OVER', LW / 2, 120);
+      g.fillStyle = '#8c8ca8';
+      g.fillText('SPACE TO RETRY', LW / 2, 134);
+    }
     g.textAlign = 'left';
 
     g.setTransform(1, 0, 0, 1, 0, 0);
-  }
-
-  function restartIfEnded() {
-    if (state === 'over' || state === 'won') reset(true);
   }
 
   // ---------- Input ----------
@@ -689,7 +987,7 @@ EVERY HIT SINGS. THE BALL WARMS WITH EVERY BOUNCE.</p>
     if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') { keys[e.key] = true; e.preventDefault(); }
     if (e.code === 'Space') {
       e.preventDefault();
-      if (state === 'ready') launch(); else restartIfEnded();
+      if (state === 'over') reset(true); else launch();
     }
   });
   window.addEventListener('keyup', function (e) { keys[e.key] = false; });
@@ -705,12 +1003,12 @@ EVERY HIT SINGS. THE BALL WARMS WITH EVERY BOUNCE.</p>
   cv.addEventListener('pointerdown', function (e) {
     e.preventDefault();
     pointerX = toLogicalX(e.clientX);
-    if (state === 'ready') launch(); else restartIfEnded();
+    if (state === 'over') reset(true); else launch();
   });
 
   // ---------- Loop ----------
-  reset(true);
   time = 0;
+  reset(true);
   var last = performance.now();
   function frame(now) {
     var dt = Math.min((now - last) / 1000, 1 / 30);
