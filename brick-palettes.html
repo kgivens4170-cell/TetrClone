@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Elemental Brick Palettes</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0a12;
+    --panel: #13131f;
+    --edge: #26263d;
+    --ink: #ebebf5;
+    --muted: #8c8ca8;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--ink); }
+  body {
+    font-family: "Press Start 2P", ui-monospace, monospace;
+    -webkit-font-smoothing: none;
+    padding: 0 0 32px;
+  }
+  header { text-align: center; padding: 32px 16px 12px; }
+  h1 { font-size: 18px; line-height: 1.5; margin: 0 0 14px; letter-spacing: 1px; }
+  header p { font-size: 9px; line-height: 2; color: var(--muted); margin: 0 auto; max-width: 620px; }
+  code { color: #ffd166; font-size: 8px; }
+  main {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr));
+    gap: 16px;
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: 16px;
+  }
+  .card {
+    background: var(--panel);
+    border: 3px solid var(--edge);
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .card-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+  .card h2 { font-size: 12px; margin: 0; }
+  .element { font-size: 8px; color: var(--muted); }
+  .note { font-size: 8px; line-height: 1.9; color: var(--muted); margin: 0; }
+  canvas {
+    display: block;
+    width: 100%;
+    height: auto;
+    background: #06060c;
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+  }
+  .swatches { display: flex; gap: 4px; }
+  .swatches span { flex: 1; height: 16px; border: 2px solid #000; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>ELEMENTAL BRICKS</h1>
+  <p>Eight animated brick palettes. Each brick is a 16 x 7 pixel sprite, drawn with
+     hard pixel edges. Load <code>brick-palettes.js</code> and call
+     <code>BrickPalettes.drawBrick(ctx, palette, x, y, scale, seed, t)</code>.</p>
+</header>
+
+<main id="grid"></main>
+
+<script src="brick-palettes.js"></script>
+<script>
+(function () {
+  'use strict';
+  var BP = window.BrickPalettes;
+  var W = BP.W, H = BP.H;
+  var SCALE = 8;                  // screen pixels per logical pixel
+  var BRICKS = 3;                 // bricks shown per card
+  var CELL_W = (W + 4) * SCALE;   // room for the glow ring on both sides
+  var CELL_H = (H + 4) * SCALE;
+
+  var grid = document.getElementById('grid');
+  var cards = [];
+
+  BP.PALETTES.forEach(function (p, i) {
+    var card = document.createElement('section');
+    card.className = 'card';
+
+    var head = document.createElement('div');
+    head.className = 'card-head';
+    head.innerHTML = '<h2></h2><span class="element"></span>';
+    head.querySelector('h2').textContent = p.name;
+    head.querySelector('.element').textContent = p.element.toUpperCase();
+
+    var canvas = document.createElement('canvas');
+    canvas.width = BRICKS * CELL_W;
+    canvas.height = CELL_H;
+    canvas.setAttribute('role', 'img');
+    canvas.setAttribute('aria-label', p.name + ' brick palette, animated');
+
+    var sw = document.createElement('div');
+    sw.className = 'swatches';
+    p.tones.concat([p.glow]).forEach(function (c) {
+      var s = document.createElement('span');
+      s.style.background = c;
+      sw.appendChild(s);
+    });
+
+    var note = document.createElement('p');
+    note.className = 'note';
+    note.textContent = p.note;
+
+    card.appendChild(head);
+    card.appendChild(canvas);
+    card.appendChild(sw);
+    card.appendChild(note);
+    grid.appendChild(card);
+
+    cards.push({ palette: p, canvas: canvas, ctx: canvas.getContext('2d'), index: i });
+  });
+
+  function frame(now) {
+    var t = now / 1000;
+    cards.forEach(function (c) {
+      var ctx = c.ctx;
+      ctx.fillStyle = '#06060c';
+      ctx.fillRect(0, 0, c.canvas.width, c.canvas.height);
+      for (var b = 0; b < BRICKS; b++) {
+        var seed = c.index * 7 + b * 3;
+        // Stagger each brick's phase so the three don't pulse in step.
+        var bt = t + b * 0.37;
+        var px = b * CELL_W + 2 * SCALE;
+        var py = 2 * SCALE;
+        BP.drawHalo(ctx, c.palette, px, py, SCALE, seed, bt);
+        BP.drawBrick(ctx, c.palette, px, py, SCALE, seed, bt);
+      }
+    });
+    window.requestAnimationFrame(frame);
+  }
+
+  window.requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
