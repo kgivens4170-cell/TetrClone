@@ -179,6 +179,7 @@
   var screens = ['menu', 'game', 'stats', 'settings', 'rogue'];
   function show(name) {
     S.screen = name;
+    document.body.classList.toggle('ingame', name === 'game');   // no browser panning or zooming while playing
     screens.forEach(function (s) { $('screen-' + s).hidden = s !== name; });
     if (name === 'menu') renderMenu();
     if (name === 'stats') renderStats();
@@ -308,7 +309,7 @@
     S.paused = !S.paused; Input.reset();
     if (S.paused) {
       $('ov').hidden = false;
-      $('ov').innerHTML = '<div class="panel"><h2>Paused</h2>' + '<p class="note">Swipe: drag to move, tap to rotate, flick down to drop, flick up to hold.</p>' + '<div class="btns"><button class="btn primary" id="rResume">Resume</button><button class="btn" id="rRetry">Restart</button><button class="btn" id="rMenu">Quit to menu</button></div></div>';
+      $('ov').innerHTML = '<div class="panel"><h2>Paused</h2>' + '<p class="note">Drag to move. Tap the left side to rotate left, the right side to rotate right. Flick down to drop, flick up to hold.</p>' + '<div class="btns"><button class="btn primary" id="rResume">Resume</button><button class="btn" id="rRetry">Restart</button><button class="btn" id="rMenu">Quit to menu</button></div></div>';
     } else $('ov').hidden = true;
     $('pauseBtn').textContent = S.paused ? '\u25B6' : 'II';
   }
@@ -491,7 +492,7 @@
   document.addEventListener('visibilitychange', function () { if (document.hidden && S.screen === 'game' && !S.paused && !S.done) togglePause(); });
   window.addEventListener('blur', function () { Input.reset(); });
 
-  [['bCW', 'cw'], ['bCCW', 'ccw'], ['bHold', 'hold'], ['bHard', 'hard']].forEach(function (p) {
+  [['bHold', 'hold'], ['bHard', 'hard']].forEach(function (p) {
     var el = $(p[0]);
     el.addEventListener('pointerdown', function (e) { e.preventDefault(); el.classList.add('on'); Input.press(p[1]); });
     ['pointerup', 'pointercancel', 'pointerleave'].forEach(function (n) {
@@ -611,8 +612,10 @@
       c.fillText(n > 0 ? String(Math.min(3, n)) : 'GO', COLS * cs / 2, VIS * cs / 2 + cs * 1.4);
       {
         c.fillStyle = s.vars.fg; c.font = '500 ' + Math.max(10, Math.round(cs * 0.46)) + 'px "Chakra Petch", system-ui, sans-serif';
-        c.fillText('Drag to move \u00B7 Tap to rotate', COLS * cs / 2, VIS * cs - cs * 3.4);
-        c.fillText('Flick down to drop \u00B7 Flick up to hold', COLS * cs / 2, VIS * cs - cs * 2.4);
+        c.fillText('Tap left side: rotate \u21BA', COLS * cs / 2, VIS * cs - cs * 6.4);
+        c.fillText('Tap right side: rotate \u21BB', COLS * cs / 2, VIS * cs - cs * 5.4);
+        c.fillText('Drag to move \u00B7 Flick down to drop', COLS * cs / 2, VIS * cs - cs * 4.4);
+        c.fillText('Flick up to hold', COLS * cs / 2, VIS * cs - cs * 3.4);
       }
       c.textAlign = 'start';
     }
@@ -847,29 +850,36 @@
   }
   // ---- swipe gestures on the board: drag = move, drag down = soft drop, tap = rotate, flick down = hard drop, flick up = hold
   function initGestures() {
-    var g = null, surface = $('stage');
+    var g = null, surface = document.body;   // the whole screen, edges included; only active while a game is running
     surface.addEventListener('pointerdown', function (e) {
-      if (e.target.closest && e.target.closest('#ov')) return;
+      if (e.target.closest && e.target.closest('#ov, button')) return;
       if (S.mode === 'rogue' && S.rg && S.rg.armed) { boardTap(e); return; }
       if (!Input.live() || (e.pointerType === 'mouse' && e.button !== 0)) return;
       e.preventDefault();
       try { surface.setPointerCapture(e.pointerId); } catch (x) {}
-      g = { id: e.pointerId, x0: e.clientX, y0: e.clientY, ax: e.clientX, ay: e.clientY, t0: performance.now() };
+      g = { id: e.pointerId, x0: e.clientX, y0: e.clientY, xr: e.clientX, px0: S.P.px, serial: S.P.serial, ay: e.clientY, t0: performance.now() };
     });
     surface.addEventListener('pointermove', function (e) {
       if (!g || e.pointerId !== g.id || !Input.live()) return;
-      var step = Math.max(14, S.cell), dx, guard = 0;
-      while (guard++ < 12 && ((dx = e.clientX - g.ax) >= step || dx <= -step)) { var d = dx > 0 ? 1 : -1; S.P.move(d); g.ax += d * step; }
+      var P = S.P, cs = Math.max(14, S.cell), guard = 0;
+      if (g.serial !== P.serial) { g.serial = P.serial; g.xr = e.clientX; g.px0 = P.px; g.ay = e.clientY; }   // a new piece appeared: re-anchor
+      // the piece goes to the column nearest the finger, so aim only has to be within half a cell
+      var want = g.px0 + Math.round((e.clientX - g.xr) / cs);
+      while (guard++ < 14 && P.px !== want) { if (!P.move(P.px < want ? 1 : -1)) break; }
       if (e.clientY < g.ay) g.ay = e.clientY;
       guard = 0;
-      while (guard++ < 12 && e.clientY - g.ay >= step) { S.P.softDrop(); g.ay += step; }
+      while (guard++ < 12 && e.clientY - g.ay >= cs) { P.softDrop(); g.ay += cs; }
     });
     function up(e) {
       if (!g || e.pointerId !== g.id) return;
-      var dx = e.clientX - g.x0, dy = e.clientY - g.y0, dt = performance.now() - g.t0, adx = Math.abs(dx), ady = Math.abs(dy);
+      var g0 = g, dx = e.clientX - g.x0, dy = e.clientY - g.y0, dt = performance.now() - g.t0, adx = Math.abs(dx), ady = Math.abs(dy);
       g = null;
       if (!Input.live()) return;
-      if (adx < 10 && ady < 10 && dt < 350) { S.P.rotate(1); return; }
+      if (adx < Math.max(10, S.cell * 0.4) && ady < Math.max(10, S.cell * 0.4) && dt < 350) {
+        var br = cvB.getBoundingClientRect();
+        S.P.rotate(g0.x0 < br.left + br.width / 2 ? -1 : 1);   // left half turns left, right half turns right
+        return;
+      }
       if (ady > S.cell * 2.5 && ady > adx * 2 && dt < 300) { if (dy > 0) S.P.hardDrop(); else S.P.doHold(); }
     }
     surface.addEventListener('pointerup', up);

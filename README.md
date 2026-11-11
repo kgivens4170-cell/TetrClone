@@ -29,17 +29,16 @@ Open `web/index.html` in any browser. No install or build step. Progress is save
 
 | Action | Touch | Keyboard |
 |--------|-------|----------|
-| Move | Drag left or right | ← → |
+| Move | Drag left or right anywhere on the screen | ← → |
 | Soft drop | Drag down | ↓ |
-| Rotate | Tap, or the ↻ ↺ buttons | ↑ or X, Z |
-| Hard drop | Flick down, or DROP | Space |
-| Hold | Flick up, or HOLD | C or Shift |
+| Rotate left | Tap the left side of the screen | Z |
+| Rotate right | Tap the right side of the screen | ↑ or X |
+| Hard drop | Flick down, or the DROP button | Space |
+| Hold | Flick up, or the HOLD button | C or Shift |
 | Pause | II button | P or Esc |
 | Roguelike tools | Mirror, Trim, Grow buttons | V, B, N |
 
-On touch there are no direction buttons. Hold and ↺ sit under the left thumb, ↻ and DROP under the right.
-
-**Swipe controls:** swipe anywhere in the play area (not just on the board): drag to move the piece column by column, drag down to soft drop, tap to rotate, flick down to hard drop, flick up to hold. When a roguelike tool is armed, taps on the board aim the tool instead.
+The whole screen is the touch surface, edges included. The only buttons in play are HOLD, II and DROP. Dragging puts the piece in the column nearest your finger, so you only need to aim within half a cell. A tap is a quick touch that barely moves; the left half of the board turns the piece left and the right half turns it right. When a roguelike tool is armed, taps on the board aim the tool instead.
 
 Auto-repeat delay and speed are adjustable in Settings.
 
