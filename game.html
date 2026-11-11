@@ -382,6 +382,74 @@ CLEAR A LEVEL, THEN CHOOSE YOUR PATH. EVERY SCENE IS DIFFERENT.</p>
   function colsFor(s) { return Math.floor((LW + GAP_X) / cellWFor(s)); }
   function maxRowsFor(s) { return Math.floor((BRICK_BOTTOM - BRICK_Y0 + GAP_Y) / cellHFor(s)); }
 
+  // Where can the ball get to? Flood fill through empty and breakable cells
+  // (breakable ones count as open, since the ball can break through them).
+  // The space below the grid is always open. The space above it is open if the
+  // ball can get there: through the grid, or down the sides when there's room.
+  function reachable(g, C, R, sidesOpen) {
+    var seen = [], queue = [], topOpen = false;
+    for (var r = 0; r < R; r++) { seen.push([]); for (var c = 0; c < C; c++) seen[r].push(false); }
+    function seed(r, c) {
+      if (g[r][c] !== 'S' && !seen[r][c]) { seen[r][c] = true; queue.push([r, c]); }
+    }
+    function openTop() {
+      if (topOpen) return;
+      topOpen = true;
+      for (var c = 0; c < C; c++) seed(0, c);
+    }
+    for (var c0 = 0; c0 < C; c0++) seed(R - 1, c0);
+    if (sidesOpen) {
+      openTop();
+      for (var r0 = 0; r0 < R; r0++) { seed(r0, 0); seed(r0, C - 1); }
+    }
+    while (queue.length) {
+      var cell = queue.shift(), cr = cell[0], cc = cell[1];
+      if (cr === 0) openTop();
+      if (cr > 0) seed(cr - 1, cc);
+      if (cr < R - 1) seed(cr + 1, cc);
+      if (cc > 0) seed(cr, cc - 1);
+      if (cc < C - 1) seed(cr, cc + 1);
+    }
+    return { seen: seen, topOpen: topOpen };
+  }
+
+  // Steel must never seal breakable bricks away from the ball, or the level can't be won.
+  // While any breakable brick is unreachable, turn one steel cell into a hard rock brick:
+  // preferably one that sits between the sealed pocket and the open area (a doorway).
+  function openSealedPockets(g, C, R, sidesOpen) {
+    for (var guard = 0; guard < C * R; guard++) {
+      var res = reachable(g, C, R, sidesOpen), seen = res.seen;
+
+      var sealed = false;
+      for (var r = 0; r < R && !sealed; r++) for (var c = 0; c < C; c++) {
+        var ch = g[r][c];
+        if (ch !== '.' && ch !== 'S' && !seen[r][c]) { sealed = true; break; }
+      }
+      if (!sealed) return;
+
+      var door = null, fallback = null;
+      for (var r2 = 0; r2 < R && !door; r2++) for (var c2 = 0; c2 < C; c2++) {
+        if (g[r2][c2] !== 'S') continue;
+        var touchesSealed = false, touchesOpen = false;
+        var nbrs = [[r2 - 1, c2], [r2 + 1, c2], [r2, c2 - 1], [r2, c2 + 1]];
+        for (var i = 0; i < 4; i++) {
+          var nr = nbrs[i][0], nc = nbrs[i][1];
+          if (nr >= 0 && nr < R && nc >= 0 && nc < C) {
+            if (g[nr][nc] === 'S') continue;
+            if (seen[nr][nc]) touchesOpen = true; else touchesSealed = true;
+          } else if (nr >= R || (nr < 0 && res.topOpen) || ((nc < 0 || nc >= C) && sidesOpen)) {
+            touchesOpen = true;                       // open space around the grid
+          }
+        }
+        if (touchesSealed && touchesOpen) { door = [r2, c2]; break; }
+        if (touchesSealed && !fallback) fallback = [r2, c2];
+      }
+      var pickCell = door || fallback;
+      if (!pickCell) return;                          // nothing left to open
+      g[pickCell[0]][pickCell[1]] = 'g';              // hard rock brick instead of steel
+    }
+  }
+
   // Build the grid for a scene at level n, add a surprise sometimes,
   // then make some bricks hard as the run goes on.
   function generateLevel(n, s, biome) {
@@ -394,6 +462,10 @@ CLEAR A LEVEL, THEN CHOOSE YOUR PATH. EVERY SCENE IS DIFFERENT.</p>
     } while (breakableCount(g) < 6 && tries < 10);
 
     if (chance(0.35)) pick(SURPRISES)(g, C, R);
+
+    // The ball fits down the sides of the grid only when the margin is wide enough
+    var margin = (LW - (C * cellWFor(s) - GAP_X)) / 2;
+    openSealedPockets(g, C, R, margin >= BALL_R * 2 + 1);
 
     var pHard = n >= 2 ? Math.min(0.45, 0.05 + 0.03 * n) : 0;
     var rows = [];
