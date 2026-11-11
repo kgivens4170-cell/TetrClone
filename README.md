@@ -34,6 +34,22 @@ Open `web/index.html` in any browser. No install or build step. Progress is save
 
 Backdrops live in `web/bg.js`, are drawn at low resolution (about 30 fps) and stand still if the device asks for reduced motion.
 
+**Music:** every theme has its own original song, written as data (key, tempo, chords, melody, instruments) and synthesized live with WebAudio. There are no audio files. Each song has four moods: *play*, *boss* (faster and harder, with a different sound per world), *calm* (menus) and *camp* (the roguelike rest stop, with a crackling fire). The tempo and hi-hats rise with your stack height and level, deeper roguelike stages run faster, and the music ducks when paused. Cycling themes on the menu previews each song. Music on/off and volume are in Settings.
+
+| Theme | Song | Feel |
+|-------|------|------|
+| Classic | Late Shift | Soft, dorian, pad and sine melody |
+| 8-Bit | Dome Lights | A minor chiptune march, pulse waves |
+| 16-Bit | Dusk Rider | Dreamy dorian with echo |
+| Handheld | Pocket Hop | Bouncy major, two pulse voices |
+| Outrun | Neon Drive | Synthwave saw bass, echo, four on the floor |
+| Neon | Pink Static | Electro pop |
+| Paper | Quiet Ink | Plucked and sparse |
+| Terminal | Green Phosphor | Minimal bleeps |
+| Catacombs | Bone Hall | Slow phrygian drone, drips; boss adds anvil hits |
+| Crystal Caverns | Glass Halls | Lydian bells and shimmer; boss drops to a whole-tone scale |
+| Ember Keep | Anvil Chorus | Heavy phrygian drive; boss moves to harmonic minor |
+
 **Progress:** personal bests, lifetime stats, game history, 23 trophies, and 4 themes (3 unlockable).
 
 **Controls**
@@ -53,7 +69,7 @@ The whole screen is the touch surface, edges included. The only buttons in play 
 
 Auto-repeat delay and speed are adjustable in Settings.
 
-**Files:** `web/engine.js` (pure game logic), `web/ai.js` (bot), `web/rogue.js` (roguelike rules), `web/bg.js` (animated backdrops), `web/app.js` (UI, input, rendering, saves), `web/index.html`.
+**Files:** `web/engine.js` (pure game logic), `web/ai.js` (bot), `web/rogue.js` (roguelike rules), `web/bg.js` (animated backdrops), `web/music.js` (songs and synth), `web/app.js` (UI, input, rendering, saves), `web/index.html`.
 
 ## Roguelike mode
 
@@ -81,7 +97,8 @@ Within an act each stage is deeper and darker than the last. Between stages the 
 
 ```bash
 node test/engine.test.js   # engine rules and bot games
-node test/rogue.test.js    # piece tools, mutations, shop, relics, stage feasibility
+node test/rogue.test.js    # piece tools, mutations, shop, relics, worlds, stage feasibility
+node test/music.test.js    # every note in key, ranges, moods, danger layer, distinct songs
 ```
 
 The engine tests cover rotation shapes, the 7-bag, line clears, scoring, T-spins, combos, back-to-back, hold, lock delay, garbage, and full bot-versus-engine games. The roguelike tests cover every piece shape in every rotation, Mirror/Trim/Grow, custom bags, the shop and relic rules, and check that the hard bot can clear the piece-limited stages inside their budgets.

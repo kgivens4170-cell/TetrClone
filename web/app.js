@@ -16,17 +16,17 @@
       vars: { bg: '#0d1017', well: '#070a10', grid: '#161b26', fg: '#e6ebf5', dim: '#8791a6', key: '#1b2230', keyhot: '#2a3550', line: '#263048', accent: '#ffcf4a', scheme: 'dark' },
       need: null },
     nes: { name: '8-Bit', desc: 'Cartridge-era blocks, a night skyline and colors that change every level. A Tetris launches a rocket.',
-      colors: ['#3cbcfc', '#fcfcfc', '#0058f8', '#58d854', '#f83800', '#0058f8', '#fca044'], garbage: '#7c7c7c', cell: 'nes', bg: 'nes', fh: '"Press Start 2P"', font: '"Pixelify Sans"', fhs: 0.6, fscale: 0.72, r: '0px', bw: '3px',
+      colors: ['#3cbcfc', '#fcfcfc', '#0058f8', '#58d854', '#f83800', '#0058f8', '#fca044'], garbage: '#7c7c7c', cell: 'nes', bg: 'nes', fh: '"Press Start 2P"', font: '"DotGothic16"', fhs: 0.6, fscale: 0.72, r: '0px', bw: '3px',
       shadow: '4px 4px 0 rgba(0,0,0,.6)', wave: 'square', grid: false, pix: true, veil: 0.45, veilGame: 0.1,
       levelPal: [['#0058f8', '#3cbcfc', '#fcfcfc'], ['#00a800', '#58d854', '#b8f818'], ['#d800cc', '#f878f8', '#fcfcfc'], ['#0058f8', '#58d854', '#fcfcfc'], ['#e40058', '#58f898', '#fcfcfc'],
                  ['#58f898', '#6888fc', '#fcfcfc'], ['#f83800', '#7c7c7c', '#fcfcfc'], ['#6844fc', '#a80020', '#fcfcfc'], ['#0058f8', '#f83800', '#fcfcfc'], ['#f83800', '#fca044', '#fcfcfc']],
       vars: { bg: '#000014', well: '#000000', grid: '#000000', fg: '#fcfcfc', dim: '#b4b4d8', key: '#0c1048', keyhot: '#2038c8', line: '#7c7cfc', accent: '#fcb800', scheme: 'dark' }, need: null },
     snes: { name: '16-Bit', desc: 'A dusk sky, parallax hills over water, and shiny beveled blocks.',
-      colors: ['#52e0ff', '#ffe14d', '#c27bff', '#5cf07a', '#ff5c6a', '#6b8cff', '#ffa14d'], garbage: '#6d6a8f', cell: 'bevel', bg: 'snes', fh: '"Pixelify Sans"', font: '"Pixelify Sans"', fhs: 1, fscale: 1, r: '0px', bw: '2px',
+      colors: ['#52e0ff', '#ffe14d', '#c27bff', '#5cf07a', '#ff5c6a', '#6b8cff', '#ffa14d'], garbage: '#6d6a8f', cell: 'bevel', bg: 'snes', fh: '"DotGothic16"', font: '"DotGothic16"', fhs: 1, fscale: 1, r: '0px', bw: '2px',
       shadow: '3px 3px 0 rgba(0,0,0,.5)', wave: 'triangle', pix: true, veil: 0.4, veilGame: 0.05,
       vars: { bg: '#1a1440', well: '#0e0a26', grid: '#241c52', fg: '#fff1e0', dim: '#c3b4e2', key: '#2b2160', keyhot: '#43358a', line: '#7a68d0', accent: '#ffd24d', scheme: 'dark' }, need: null },
     gb: { name: 'Handheld', desc: 'Four shades of green on a pocket screen with an LCD grid.',
-      colors: ['#0f380f', '#306230', '#0f3810', '#306231', '#0f3811', '#306232', '#0f3812'], garbage: '#306230', cell: 'gb', bg: 'gb', fh: '"Press Start 2P"', font: '"Pixelify Sans"', fhs: 0.6, fscale: 0.7, r: '0px', bw: '3px',
+      colors: ['#0f380f', '#306230', '#0f3810', '#306231', '#0f3811', '#306232', '#0f3812'], garbage: '#306230', cell: 'gb', bg: 'gb', fh: '"Press Start 2P"', font: '"DotGothic16"', fhs: 0.6, fscale: 0.7, r: '0px', bw: '3px',
       shadow: '3px 3px 0 #0f380f', wave: 'square', grid: false, pix: true, veil: 0.1, veilGame: 0,
       vars: { bg: '#9bbc0f', well: '#8bac0f', grid: '#7f9f0d', fg: '#0f380f', dim: '#306230', key: '#8bac0f', keyhot: '#6f8f0b', line: '#0f380f', accent: '#0f380f', scheme: 'light' }, need: null },
     outrun: { name: 'Outrun', desc: 'Neon grid racing at a striped sun, with glowing blocks.',
@@ -34,15 +34,15 @@
       shadow: '0 0 14px rgba(255,62,165,.35)', wave: 'sawtooth', veil: 0.25, veilGame: 0.05,
       vars: { bg: '#0b0220', well: '#07010f', grid: '#2a0a52', fg: '#ffe8ff', dim: '#bba2dc', key: '#1d0a3a', keyhot: '#35145f', line: '#7a2bbf', accent: '#ff3ea5', scheme: 'dark' }, need: null },
     catacombs: { name: 'Catacombs', desc: 'Torchlit stone, moss and old bones. Act 1 of the Roguelike.',
-      colors: ['#8fa68e', '#c9b99a', '#a2582f', '#6b7f8c', '#7c9c4a', '#b08a4a', '#9a6a7a'], garbage: '#4a4a44', cell: 'stone', bg: 'catacombs', fh: '"MedievalSharp"', font: '"Pixelify Sans"', r: '2px', bw: '3px',
+      colors: ['#8fa68e', '#c9b99a', '#a2582f', '#6b7f8c', '#7c9c4a', '#b08a4a', '#9a6a7a'], garbage: '#4a4a44', cell: 'stone', bg: 'catacombs', fh: '"MedievalSharp"', font: '"DotGothic16"', r: '2px', bw: '3px',
       shadow: '3px 3px 0 rgba(0,0,0,.65)', wave: 'triangle', pix: true, veil: 0.5, veilGame: 0.1,
       vars: { bg: '#0f0d0a', well: '#0a0908', grid: '#1b1813', fg: '#eadfc8', dim: '#ab9f86', key: '#26211a', keyhot: '#3a3126', line: '#6a5a40', accent: '#ffb347', scheme: 'dark' }, need: 'Start a Roguelike run' },
     crystal: { name: 'Crystal Caverns', desc: 'Glittering stone, cold mist and eyes in the dark. Act 2 of the Roguelike.',
-      colors: ['#5ee7ff', '#b6c2ff', '#9b7bff', '#6dffb8', '#ff7bd5', '#7bb6ff', '#ffd57b'], garbage: '#3b3a68', cell: 'gem', bg: 'crystal', fh: '"Cinzel"', font: '"Pixelify Sans"', r: '2px', bw: '2px',
+      colors: ['#5ee7ff', '#b6c2ff', '#9b7bff', '#6dffb8', '#ff7bd5', '#7bb6ff', '#ffd57b'], garbage: '#3b3a68', cell: 'gem', bg: 'crystal', fh: '"Cinzel"', font: '"DotGothic16"', r: '2px', bw: '2px',
       shadow: '0 0 12px rgba(123,227,255,.25)', wave: 'sine', pix: true, veil: 0.45, veilGame: 0.08,
       vars: { bg: '#0a0820', well: '#070516', grid: '#17123a', fg: '#e8e6ff', dim: '#aca6e4', key: '#171240', keyhot: '#2a2370', line: '#5a4cc0', accent: '#7be3ff', scheme: 'dark' }, need: 'Beat The Mason' },
     forge: { name: 'Ember Keep', desc: 'Obsidian halls over a river of fire. Act 3 of the Roguelike.',
-      colors: ['#ffb347', '#ff6a3d', '#ffd86b', '#e8e0d0', '#ff3b2f', '#b07cff', '#ff8f5a'], garbage: '#3a2a28', cell: 'ember', bg: 'forge', fh: '"MedievalSharp"', font: '"Pixelify Sans"', r: '2px', bw: '3px',
+      colors: ['#ffb347', '#ff6a3d', '#ffd86b', '#e8e0d0', '#ff3b2f', '#b07cff', '#ff8f5a'], garbage: '#3a2a28', cell: 'ember', bg: 'forge', fh: '"MedievalSharp"', font: '"DotGothic16"', r: '2px', bw: '3px',
       shadow: '0 0 14px rgba(255,100,30,.3)', wave: 'sawtooth', pix: true, veil: 0.45, veilGame: 0.08,
       vars: { bg: '#0e0504', well: '#080202', grid: '#241010', fg: '#ffe9d6', dim: '#cfa690', key: '#2a0e0a', keyhot: '#4a1a10', line: '#8a3a1c', accent: '#ff8a2a', scheme: 'dark' }, need: 'Beat The Fog' },
     neon: { name: 'Neon', desc: 'Dark purple with hot pink.', colors: ['#00f0ff', '#fff200', '#c24bff', '#39ff7a', '#ff3b5c', '#4d7cff', '#ff9d00'], garbage: '#5b4a85',
@@ -93,6 +93,7 @@
     root.dataset.world = activeSkinId(); if (s.pix && s.fhs < 1) root.dataset.pix = '1'; else delete root.dataset.pix;
     spriteCache = {};
     if (window.Bg) { Bg.set(s.bg); applyVeil(); }
+    musicSync();
   }
   // Inside a Roguelike run the current act's world replaces the chosen theme; the backdrop also learns the depth, boss and camp state.
   function syncWorld() {
@@ -101,7 +102,22 @@
     worldId = wid;
     if (changed) applySkin();
     if (window.Bg) Bg.params(inRogue ? { depth: RG.depthOf(run), boss: !!RG.stageInfo(run).boss, camp: S.screen === 'rogue' && run.phase === 'shop' } : {});
+    musicSync();
   }
+  // Picks the song for whatever is on screen: the theme's song, in a mood that fits (play, boss, calm menus, campfire rest stop).
+  function musicSync() {
+    if (!window.Music) return;
+    if (!save.settings.music) { Music.setEnabled(false); return; }
+    Music.setEnabled(true); Music.setVolume(save.settings.musicVol / 100);
+    var id = activeSkinId(), mode = 'calm', depth = 0, run = save.rogue && save.rogue.run, inRogue = S.mode === 'rogue' && !!run;
+    if (S.screen === 'game' && S.P && !S.done) {
+      mode = 'game';
+      if (inRogue) { depth = RG.depthOf(run); if (S.rg && S.rg.st && S.rg.st.boss) mode = 'boss'; }
+    } else if (S.screen === 'rogue' && run) { depth = RG.depthOf(run); mode = run.phase === 'shop' ? 'camp' : 'calm'; }
+    Music.play(id, mode, depth);
+    Music.duck(S.paused && S.screen === 'game');
+  }
+  function songName() { var m = window.Music && Music.Score.SONGS[activeSkinId()]; return m ? m.name : ''; }
   function applyVeil() { var s = skin(); document.documentElement.style.setProperty('--veil', S.screen === 'game' ? s.veilGame : s.veil); }
 
   // ---------------------------------------------------------------- save data
@@ -112,7 +128,7 @@
       totals: { games: 0, lines: 0, pieces: 0, timeMs: 0, tspins: 0, tetrises: 0, perfect: 0, maxCombo: 0, maxB2b: 0, attack: 0,
                 vsWins: { easy: 0, medium: 0, hard: 0 }, vsLosses: 0 },
       history: [], ach: {}, rogue: { runs: 0, wins: 0, bestStage: 0, run: null },
-      settings: { das: 150, arr: 35, worlds: true, dropRight: false, ghost: true, sound: true, vibrate: true, skin: 'classic', diff: 'medium' } };
+      settings: { das: 150, arr: 35, music: true, musicVol: 60, worlds: true, dropRight: false, ghost: true, sound: true, vibrate: true, skin: 'classic', diff: 'medium' } };
   }
   function merge(dst, src) {
     Object.keys(src || {}).forEach(function (k) {
@@ -146,6 +162,7 @@
     init: function () {
       if (this.ctx) { if (this.ctx.state === 'suspended') this.ctx.resume(); return; }
       try { var AC = window.AudioContext || window.webkitAudioContext; if (AC) this.ctx = new AC(); } catch (e) {}
+      if (this.ctx && window.Music) { Music.attach(this.ctx); musicSync(); }
     },
     tone: function (f, d, type, vol, slide, delay) {
       if (!save.settings.sound || !this.ctx) return;
@@ -291,6 +308,7 @@
     var got = Object.keys(save.ach).length;
     $('trophyCount').textContent = got + '/' + ACH.length;
     $('themeName').textContent = skin().name;
+    $('nowPlaying').textContent = save.settings.music && songName() ? '\u266A ' + songName() : '';
   }
 
   function renderStats() {
@@ -341,7 +359,7 @@
     var s = save.settings;
     $('dasV').textContent = s.das + ' ms'; $('das').value = s.das;
     $('arrV').textContent = s.arr + ' ms'; $('arr').value = s.arr;
-    $('optWorlds').checked = s.worlds; $('optDropRight').checked = s.dropRight; $('optGhost').checked = s.ghost; $('optSound').checked = s.sound; $('optVib').checked = s.vibrate;
+    $('optMusic').checked = s.music; $('musicVol').value = s.musicVol; $('musicVolV').textContent = s.musicVol + '%'; $('optWorlds').checked = s.worlds; $('optDropRight').checked = s.dropRight; $('optGhost').checked = s.ghost; $('optSound').checked = s.sound; $('optVib').checked = s.vibrate;
     var html = '';
     Object.keys(SKINS).forEach(function (id) {
       var k = SKINS[id], ok = skinUnlocked(id), v = k.vars;
@@ -381,7 +399,7 @@
 
   function togglePause() {
     if (S.screen !== 'game' || S.done || S.countdown > 0) return;
-    S.paused = !S.paused; Input.reset();
+    S.paused = !S.paused; Input.reset(); musicSync();
     if (S.paused) {
       $('ov').hidden = false;
       $('ov').innerHTML = '<div class="panel"><h2>Paused</h2>' + '<p class="note">Drag to move. Tap the left side to rotate left, the right side to rotate right. Flick down to drop, flick up to hold.</p>' + '<div class="btns"><button class="btn primary" id="rResume">Resume</button><button class="btn" id="rRetry">Restart</button><button class="btn" id="rMenu">Quit to menu</button></div></div>';
@@ -427,7 +445,7 @@
     var before = Object.keys(save.ach).length;
     checkFin(r); persist();
     r.unlocked = Object.keys(save.ach).length - before;
-    S.result = r;
+    S.result = r; musicSync();
     Sfx.play(outcome === 'lose' || outcome === 'gameover' || outcome === 'fail' ? 'over' : 'win');
     buzz(60);
     showResult(r);
@@ -565,7 +583,8 @@
     }
   });
   document.addEventListener('keyup', function (e) { var a = KEYMAP[e.key]; if (a) Input.release(a); });
-  document.addEventListener('visibilitychange', function () { if (document.hidden && S.screen === 'game' && !S.paused && !S.done) togglePause(); });
+  document.addEventListener('visibilitychange', function () {
+    if (Sfx.ctx) { try { if (document.hidden) Sfx.ctx.suspend(); else Sfx.ctx.resume(); } catch (e) {} } if (document.hidden && S.screen === 'game' && !S.paused && !S.done) togglePause(); });
   window.addEventListener('blur', function () { Input.reset(); });
 
   // HOLD and DROP act when the finger is lifted while still on the button, so a graze, a slide across, or a press that
@@ -871,7 +890,7 @@
     if (run.phase === 'intro') {
       var ch = RG.toolCharges(run);
       var wd = RG.worldFor(run), arrival = run.stage % 3 === 0 && run.attempt === 0;
-      body += '<div class="worldbar"><small>ACT ' + (RG.actOf(run.stage) + 1) + ' \u00B7 ' + wd.name.toUpperCase() + '</small><p>' + (arrival ? wd.arrive : wd.tag) + '</p></div>';
+      body += '<div class="worldbar"><small>ACT ' + (RG.actOf(run.stage) + 1) + ' \u00B7 ' + wd.name.toUpperCase() + '</small><p>' + (arrival ? wd.arrive : wd.tag) + '</p>' + (save.settings.music && songName() ? '<p class="np">\u266A ' + songName() + '</p>' : '') + '</div>';
       body += '<div class="stagecard' + (st.boss ? ' boss' : '') + '"><small>' + (st.boss ? 'BOSS · ' : '') + 'STAGE ' + (run.stage + 1) + ' OF 9</small><h2>' + st.name + '</h2><p class="flavor">' + st.flavor + '</p><p class="goal">' + RG.goalText(st, run) + '</p>' +
         (st.rule ? '<p class="rule">' + st.rule + '</p>' : '') + '<p class="meta2">Gravity level ' + st.level + '</p></div>';
       if (run.msg) body += '<p class="note">' + run.msg + '</p>';
@@ -1095,7 +1114,7 @@
     $('ov').innerHTML = html; $('ov').hidden = false;
   }
   function stageClear() {
-    if (S.done) return; S.done = true;
+    if (S.done) return; S.done = true; musicSync();
     var run = runOf(), rg = S.rg, st = rg.st, P = S.P, left = rg.budget ? Math.max(0, rg.budget - P.pieces) : 0;
     var rw = RG.clearReward(run, { piecesLeft: left });
     var hadWorlds = WORLD_SKINS.filter(skinUnlocked);
@@ -1115,7 +1134,7 @@
     rogueOverlay(last ? 'Run complete' : 'Stage clear', rows, last ? 'See your run' : 'Choose a relic', st.boss ? 'Boss defeated' : '');
   }
   function stageFail(reason) {
-    if (S.done) return; S.done = true;
+    if (S.done) return; S.done = true; musicSync();
     var run = runOf(); rogueTally(); run.lives--;
     var over = run.lives <= 0;
     if (over) { run.msg = 'Out of lives on stage ' + (run.stage + 1) + '.'; finishRun(false); }
@@ -1129,6 +1148,7 @@
   function frame(ts) {
     var dt = Math.min(50, ts - last || 16); last = ts;
     if (window.Bg) { Bg.level(S.screen === 'game' && S.P ? S.P.level : 1); Bg.frame(ts); }
+    if (window.Music && S.screen === 'game' && S.P && !S.done && !S.paused) Music.intensity(Math.max(Math.min(1, Math.max(0, stackHeight(S.P) - 9) / 9), Math.min(1, (S.P.level - 1) / 15)));
     if (S.screen === 'game' && S.P) {
       if (!S.paused && !S.done) {
         if (S.countdown > 0) {
@@ -1190,6 +1210,9 @@
   });
   $('das').addEventListener('input', function () { save.settings.das = +this.value; $('dasV').textContent = this.value + ' ms'; persist(); });
   $('arr').addEventListener('input', function () { save.settings.arr = +this.value; $('arrV').textContent = this.value + ' ms'; persist(); });
+  $('optMusic').addEventListener('change', function () { save.settings.music = this.checked; persist(); Sfx.init(); musicSync(); renderMenuNow(); });
+  $('musicVol').addEventListener('input', function () { save.settings.musicVol = +this.value; $('musicVolV').textContent = this.value + '%'; persist(); if (window.Music) Music.setVolume(save.settings.musicVol / 100); });
+  function renderMenuNow() { var el = $('nowPlaying'); if (el) el.textContent = save.settings.music && songName() ? '\u266A ' + songName() : ''; }
   $('optWorlds').addEventListener('change', function () { save.settings.worlds = this.checked; persist(); syncWorld(); });
   $('optDropRight').addEventListener('change', function () { save.settings.dropRight = this.checked; persist(); applyPadSide(); });
   $('optGhost').addEventListener('change', function () { save.settings.ghost = this.checked; persist(); });

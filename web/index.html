@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>TetrClone</title>
 <meta name="claude:viewport-fit-sides" content="cover">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=Press+Start+2P&family=Pixelify+Sans:wght@500;700&family=Orbitron:wght@600;800&family=MedievalSharp&family=Cinzel:wght@600;800&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=Press+Start+2P&family=DotGothic16&family=Orbitron:wght@600;800&family=MedievalSharp&family=Cinzel:wght@600;800&display=swap">
 <style>
 /* Layout: menu and stats scroll; the game screen is one fixed screen (HUD, stats, board, thumb pad).
    Colors are tokens that the chosen skin overrides at runtime. Dark Classic is the default. */
@@ -187,6 +187,8 @@ button.chip:disabled { opacity: .4; cursor: default; }
 .worldbar { border-left: 3px solid var(--accent); padding: 2px 0 2px 12px; }
 .worldbar small { font-size: 10px; letter-spacing: .16em; color: var(--accent); }
 .worldbar p { margin: 3px 0 0; font-size: 13px; color: var(--dim); }
+.np { font-size: 12px !important; color: var(--accent) !important; letter-spacing: .06em; margin: 2px 0 0; }
+.logo .np { margin-top: 0; min-height: 1em; }
 .stagecard .flavor { font-size: 13px; color: var(--dim); font-style: italic; }
 html[data-world="catacombs"] .logo h1 { text-shadow: 0 0 14px #ffb347; letter-spacing: .08em; }
 html[data-world="crystal"] .logo h1 { text-shadow: 0 0 14px #7be3ff; letter-spacing: .12em; }
@@ -223,6 +225,7 @@ html[data-world="outrun"] .stat b, html[data-world="outrun"] .stat.score b { tex
       <h1>TETRCLONE</h1>
       <div class="blocks"><i style="background:#2fe6e6"></i><i style="background:#f2e233"></i><i style="background:#a64ef0"></i><i style="background:#3ee05a"></i><i style="background:#f04a4a"></i><i style="background:#4a6cf5"></i><i style="background:#f5a03a"></i></div>
       <p>SRS rotation, T-spins, a bot that fights back, and a roguelike where you rebuild the pieces.</p>
+      <p class="np" id="nowPlaying"></p>
     </div>
     <div id="modes" class="modes"></div>
     <div class="row2">
@@ -254,6 +257,8 @@ html[data-world="outrun"] .stat b, html[data-world="outrun"] .stat.score b { tex
     <label class="toggle">Roguelike worlds change the theme <input type="checkbox" id="optWorlds"></label>
     <label class="toggle">DROP button on the right (default: left corner) <input type="checkbox" id="optDropRight"></label>
     <label class="toggle">Ghost piece <input type="checkbox" id="optGhost"></label>
+    <label class="toggle">Music <input type="checkbox" id="optMusic"></label>
+    <div class="set"><label for="musicVol">Music volume <span id="musicVolV"></span></label><input type="range" id="musicVol" min="0" max="100" step="5"></div>
     <label class="toggle">Sound effects <input type="checkbox" id="optSound"></label>
     <label class="toggle">Vibration <input type="checkbox" id="optVib"></label>
     <h3>Themes</h3><div id="skins" class="skins"></div>
@@ -304,6 +309,7 @@ html[data-world="outrun"] .stat b, html[data-world="outrun"] .stat.score b { tex
 
 <script src="engine.js"></script>
 <script src="bg.js"></script>
+<script src="music.js"></script>
 <script src="ai.js"></script>
 <script src="rogue.js"></script>
 <script src="app.js"></script>
