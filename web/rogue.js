@@ -12,21 +12,31 @@
 
   // goal: lines (clear n, optionally within `pieces`) or survive (ms).  mods: garbage {every, hard}, hideQueue, noGhost, chaos
   var STAGES = [
-    { name: 'Warm-up', level: 1, goal: { type: 'lines', n: 8 } },
-    { name: 'Tight Fit', level: 2, goal: { type: 'lines', n: 10, pieces: 34 } },
-    { name: 'The Mason', boss: true, level: 2, goal: { type: 'lines', n: 12 }, mods: { garbage: { every: 11000, hard: true } },
+    { name: 'Entrance Hall', flavor: 'Torches still burn here. Something has been counting the bones.', level: 1, goal: { type: 'lines', n: 8 } },
+    { name: 'Bone Corridor', flavor: 'The passage narrows. Every piece has to count.', level: 2, goal: { type: 'lines', n: 10, pieces: 34 } },
+    { name: 'The Mason', flavor: 'He seals the dead behind new walls, one row at a time.', boss: true, level: 2, goal: { type: 'lines', n: 12 }, mods: { garbage: { every: 11000, hard: true } },
       rule: 'A garbage row rises from below every 11 seconds.' },
-    { name: 'Climb', level: 3, goal: { type: 'lines', n: 14 } },
-    { name: 'Rising Tide', level: 3, goal: { type: 'survive', ms: 60000 }, mods: { garbage: { every: 7000, hard: false } },
+    { name: 'Glittering Descent', flavor: 'The stairs end in a cave that glows with no light source.', level: 3, goal: { type: 'lines', n: 14 } },
+    { name: 'Flooded Gallery', flavor: 'Black water seeps in from below. Keep clearing or drown.', level: 3, goal: { type: 'survive', ms: 60000 }, mods: { garbage: { every: 7000, hard: false } },
       rule: 'Garbage keeps coming. Clear lines to hold it off.' },
-    { name: 'The Fog', boss: true, level: 4, goal: { type: 'lines', n: 16 }, mods: { hideQueue: true, noGhost: true },
+    { name: 'The Fog', flavor: 'You cannot see far. Something watches from the mist.', boss: true, level: 4, goal: { type: 'lines', n: 16 }, mods: { hideQueue: true, noGhost: true },
       rule: 'No ghost piece and no next-piece preview.' },
-    { name: 'Efficiency', level: 5, goal: { type: 'lines', n: 18, pieces: 56 } },
-    { name: 'Pressure', level: 6, goal: { type: 'lines', n: 20 }, mods: { garbage: { every: 15000, hard: false } },
+    { name: 'Forge Floor', flavor: 'The old smiths wasted nothing. Neither can you.', level: 5, goal: { type: 'lines', n: 18, pieces: 56 } },
+    { name: 'The Furnace', flavor: 'The heat is rising and so is the lava.', level: 6, goal: { type: 'lines', n: 20 }, mods: { garbage: { every: 15000, hard: false } },
       rule: 'Garbage arrives every 15 seconds.' },
-    { name: 'The Architect', boss: true, level: 6, goal: { type: 'lines', n: 20 }, mods: { chaos: 0.4, garbage: { every: 14000, hard: true } },
+    { name: 'The Architect', flavor: 'The builder of this place reshapes everything it touches.', boss: true, level: 6, goal: { type: 'lines', n: 20 }, mods: { chaos: 0.4, garbage: { every: 14000, hard: true } },
       rule: 'Pieces arrive randomly grown or trimmed, and garbage rises every 14 seconds.' }
   ];
+
+  // One world per act (three stages each). The theme, backdrop and flavor change as you descend.
+  var WORLDS = [
+    { id: 'catacombs', name: 'The Mossy Catacombs', short: 'Catacombs', tag: 'Torchlight, damp stone and old bones.', arrive: 'You light a torch and step into the Catacombs. The stone remembers every footstep.' },
+    { id: 'crystal', name: 'The Crystal Caverns', short: 'Caverns', tag: 'Glittering stone, cold mist and eyes in the dark.', arrive: 'The stairs end in a cavern full of light. The crystals hum as you pass.' },
+    { id: 'forge', name: 'The Ember Keep', short: 'Ember Keep', tag: 'Obsidian halls over a river of fire.', arrive: 'Heat rolls up the stairwell. Far below, the old forge is still burning.' }
+  ];
+  function actOf(stage) { return Math.min(2, Math.floor(stage / 3)); }
+  function worldFor(run) { return WORLDS[actOf(run.stage)]; }
+  function depthOf(run) { return run.stage % 3; }
 
   var RELICS = [
     { id: 'gold_rush', name: 'Gold Rush', text: 'Every cleared line pays +1 coin.', rare: 0 },
@@ -253,7 +263,7 @@
     return 'Clear ' + g.n + ' lines' + (b ? ' in ' + b + ' pieces' : '');
   }
 
-  var API = { TOOLS: TOOLS, TOOL_INFO: TOOL_INFO, STAGES: STAGES, RELICS: RELICS, RELIC_BY_ID: RELIC_BY_ID, MAX_DECK: MAX_DECK, MIN_DECK: MIN_DECK,
+  var API = { WORLDS: WORLDS, actOf: actOf, worldFor: worldFor, depthOf: depthOf, TOOLS: TOOLS, TOOL_INFO: TOOL_INFO, STAGES: STAGES, RELICS: RELICS, RELIC_BY_ID: RELIC_BY_ID, MAX_DECK: MAX_DECK, MIN_DECK: MIN_DECK,
               newRun: newRun, mods: mods, toolCharges: toolCharges, defsFor: defsFor, pieceSize: pieceSize, stageInfo: stageInfo, budget: budget,
               engineOpts: engineOpts, coinsForLock: coinsForLock, clearReward: clearReward, draftOptions: draftOptions, pickRelic: pickRelic,
               addRelic: addRelic, shopStock: shopStock, reroll: reroll, rerollCost: rerollCost, price: price, deckCounts: deckCounts,

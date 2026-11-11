@@ -202,5 +202,15 @@ function botStage(stageIdx, seed) {
   });
 }
 
+// ---------- worlds
+{
+  const run = R.newRun(3);
+  const ids = []; for (let i = 0; i < 9; i++) { run.stage = i; ids.push(R.worldFor(run).id + ':' + R.depthOf(run)); }
+  t('three acts of three stages map to three worlds', JSON.stringify(ids) === JSON.stringify(['catacombs:0', 'catacombs:1', 'catacombs:2', 'crystal:0', 'crystal:1', 'crystal:2', 'forge:0', 'forge:1', 'forge:2']), ids.join());
+  t('every boss closes an act (depth 2)', R.STAGES.every((s, i) => !s.boss || i % 3 === 2));
+  t('every stage has a name and flavor line', R.STAGES.every(s => s.name && s.flavor));
+  t('worlds have names and arrival text', R.WORLDS.every(w => w.id && w.name && w.tag && w.arrive));
+}
+
 console.log(`${passes} passed, ${fails} failed`);
 process.exit(fails ? 1 : 0);

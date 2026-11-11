@@ -30,6 +30,8 @@ Open `web/index.html` in any browser. No install or build step. Progress is save
 - *Handheld*: four greens with an LCD grid, drifting dither and hills, and a different pattern per piece type.
 - *Outrun*: neon grid racing toward a striped sun, glowing tiles, the sun pulses on big clears.
 
+- *Catacombs*, *Crystal Caverns*, *Ember Keep*: the three dungeon worlds of the Roguelike (see below). They unlock as themes for every mode once you reach them.
+
 Backdrops live in `web/bg.js`, are drawn at low resolution (about 30 fps) and stand still if the device asks for reduced motion.
 
 **Progress:** personal bests, lifetime stats, game history, 23 trophies, and 4 themes (3 unlockable).
@@ -57,7 +59,14 @@ Auto-repeat delay and speed are adjustable in Settings.
 
 A run is 9 stages in 3 acts. Each act ends with a boss. You have 2 lives; failing a stage costs one and you retry it. Clear a stage to earn coins, draft 1 of 3 relics, then spend coins in the shop. Runs are seeded (the seed is shown), and your run is saved between visits.
 
-**Stages:** clear N lines, clear N lines within a piece budget, or survive a timer while garbage rises. Bosses: *The Mason* (a garbage row rises every 11 s), *The Fog* (no ghost, no next preview), *The Architect* (pieces arrive randomly grown or trimmed, with rising garbage).
+**Worlds:** each act is its own world, and the theme changes automatically as you descend (turn this off in Settings with "Roguelike worlds change the theme").
+- *Act 1, The Mossy Catacombs* (Entrance Hall, Bone Corridor, The Mason): torchlit moss-covered brick, dripping water, bats, and chipped stone blocks. The Mason's hall adds swaying chains, anvil sparks and red torchlight.
+- *Act 2, The Crystal Caverns* (Glittering Descent, Flooded Gallery, The Fog): stalactites, pulsing crystal clusters, drifting motes, mist and cut-gem blocks. The Fog boss adds dense mist and watching eyes.
+- *Act 3, The Ember Keep* (Forge Floor, The Furnace, The Architect): obsidian pillars, a lava river that rises with depth, embers and cracked obsidian blocks. The Architect's vault has ghostly tetrominoes floating past.
+
+Within an act each stage is deeper and darker than the last. Between stages the shop becomes a rest stop with a campfire. Each stage has a flavor line and the briefing announces the new world when you descend.
+
+**Stage goals:** clear N lines, clear N lines within a piece budget, or survive a timer while garbage rises. Bosses: *The Mason* (a garbage row rises every 11 s), *The Fog* (no ghost, no next preview), *The Architect* (pieces arrive randomly grown or trimmed, with rising garbage).
 
 **Shape manipulation, three ways**
 - **Bag building:** your bag is a deck. Add pieces (dot, domino, tri-I, tri-L, plus, P-pentomino, 3x3 block), cull pieces, or duplicate them.

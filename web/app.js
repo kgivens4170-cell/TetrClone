@@ -33,6 +33,18 @@
       colors: ['#22d3ee', '#ffe14d', '#c084fc', '#4ade80', '#ff3ea5', '#6d8bff', '#ff9f43'], garbage: '#4b3f72', cell: 'glow', bg: 'outrun', fh: '"Orbitron"', font: '"Chakra Petch"', fhs: 0.8, fscale: 0.85, r: '2px', bw: '1px',
       shadow: '0 0 14px rgba(255,62,165,.35)', wave: 'sawtooth', veil: 0.25, veilGame: 0.05,
       vars: { bg: '#0b0220', well: '#07010f', grid: '#2a0a52', fg: '#ffe8ff', dim: '#bba2dc', key: '#1d0a3a', keyhot: '#35145f', line: '#7a2bbf', accent: '#ff3ea5', scheme: 'dark' }, need: null },
+    catacombs: { name: 'Catacombs', desc: 'Torchlit stone, moss and old bones. Act 1 of the Roguelike.',
+      colors: ['#8fa68e', '#c9b99a', '#a2582f', '#6b7f8c', '#7c9c4a', '#b08a4a', '#9a6a7a'], garbage: '#4a4a44', cell: 'stone', bg: 'catacombs', fh: '"MedievalSharp"', font: '"Pixelify Sans"', r: '2px', bw: '3px',
+      shadow: '3px 3px 0 rgba(0,0,0,.65)', wave: 'triangle', pix: true, veil: 0.5, veilGame: 0.1,
+      vars: { bg: '#0f0d0a', well: '#0a0908', grid: '#1b1813', fg: '#eadfc8', dim: '#ab9f86', key: '#26211a', keyhot: '#3a3126', line: '#6a5a40', accent: '#ffb347', scheme: 'dark' }, need: 'Start a Roguelike run' },
+    crystal: { name: 'Crystal Caverns', desc: 'Glittering stone, cold mist and eyes in the dark. Act 2 of the Roguelike.',
+      colors: ['#5ee7ff', '#b6c2ff', '#9b7bff', '#6dffb8', '#ff7bd5', '#7bb6ff', '#ffd57b'], garbage: '#3b3a68', cell: 'gem', bg: 'crystal', fh: '"Cinzel"', font: '"Pixelify Sans"', r: '2px', bw: '2px',
+      shadow: '0 0 12px rgba(123,227,255,.25)', wave: 'sine', pix: true, veil: 0.45, veilGame: 0.08,
+      vars: { bg: '#0a0820', well: '#070516', grid: '#17123a', fg: '#e8e6ff', dim: '#aca6e4', key: '#171240', keyhot: '#2a2370', line: '#5a4cc0', accent: '#7be3ff', scheme: 'dark' }, need: 'Beat The Mason' },
+    forge: { name: 'Ember Keep', desc: 'Obsidian halls over a river of fire. Act 3 of the Roguelike.',
+      colors: ['#ffb347', '#ff6a3d', '#ffd86b', '#e8e0d0', '#ff3b2f', '#b07cff', '#ff8f5a'], garbage: '#3a2a28', cell: 'ember', bg: 'forge', fh: '"MedievalSharp"', font: '"Pixelify Sans"', r: '2px', bw: '3px',
+      shadow: '0 0 14px rgba(255,100,30,.3)', wave: 'sawtooth', pix: true, veil: 0.45, veilGame: 0.08,
+      vars: { bg: '#0e0504', well: '#080202', grid: '#241010', fg: '#ffe9d6', dim: '#cfa690', key: '#2a0e0a', keyhot: '#4a1a10', line: '#8a3a1c', accent: '#ff8a2a', scheme: 'dark' }, need: 'Beat The Fog' },
     neon: { name: 'Neon', desc: 'Dark purple with hot pink.', colors: ['#00f0ff', '#fff200', '#c24bff', '#39ff7a', '#ff3b5c', '#4d7cff', '#ff9d00'], garbage: '#5b4a85',
       vars: { bg: '#0a0614', well: '#06030f', grid: '#1c1233', fg: '#f3e9ff', dim: '#9484b8', key: '#1d1433', keyhot: '#33224f', line: '#3a2a5c', accent: '#ff3ea5', scheme: 'dark' },
       need: 'Play 3 games' },
@@ -47,8 +59,10 @@
   var EXTRA_COLORS = ['#ff7ac8', '#e8eef7', '#27d3a2', '#b7a6ff', '#ffb4a2', '#ffd166', '#8bd3ff'];
   var LGROUP = [1, 2, 0, 1, 0, 1, 0];   // which of a level palette's three colors each standard piece uses
   var skinCache = { id: null, obj: null };
+  var worldId = null;   // set while inside a Roguelike run: the act's world replaces the chosen theme
+  function activeSkinId() { return worldId && SKINS[worldId] ? worldId : (SKINS[save.settings.skin] ? save.settings.skin : 'classic'); }
   function skin() {
-    var id = SKINS[save.settings.skin] ? save.settings.skin : 'classic';
+    var id = activeSkinId();
     if (skinCache.id !== id) { skinCache = { id: id, obj: Object.assign({}, SKIN_DEFAULTS, SKINS[id]) }; }
     return skinCache.obj;
   }
@@ -64,6 +78,9 @@
     if (id === 'neon') return save.totals.games >= 3;
     if (id === 'paper') return save.totals.lines >= 100;
     if (id === 'terminal') return !!save.ach.beat_medium;
+    if (id === 'catacombs') return save.rogue.runs > 0 || !!save.rogue.run;
+    if (id === 'crystal') return save.rogue.bestStage >= 3 || !!(save.rogue.run && save.rogue.run.cleared >= 3);
+    if (id === 'forge') return save.rogue.bestStage >= 6 || !!(save.rogue.run && save.rogue.run.cleared >= 6);
     return true;
   }
   function applySkin() {
@@ -73,9 +90,17 @@
     st.setProperty('--font', s.font + ', ui-monospace, "SF Mono", Menlo, monospace');
     st.setProperty('--fh', s.fh + ', ui-monospace, "SF Mono", Menlo, monospace');
     st.setProperty('--r', s.r); st.setProperty('--bw', s.bw); st.setProperty('--shadow', s.shadow);
-    root.dataset.world = save.settings.skin; if (s.pix && s.fhs < 1) root.dataset.pix = '1'; else delete root.dataset.pix;
+    root.dataset.world = activeSkinId(); if (s.pix && s.fhs < 1) root.dataset.pix = '1'; else delete root.dataset.pix;
     spriteCache = {};
     if (window.Bg) { Bg.set(s.bg); applyVeil(); }
+  }
+  // Inside a Roguelike run the current act's world replaces the chosen theme; the backdrop also learns the depth, boss and camp state.
+  function syncWorld() {
+    var run = save.rogue && save.rogue.run, inRogue = !!(save.settings.worlds && run && (S.screen === 'rogue' || (S.screen === 'game' && S.mode === 'rogue')));
+    var wid = inRogue ? RG.worldFor(run).id : null, changed = wid !== worldId;
+    worldId = wid;
+    if (changed) applySkin();
+    if (window.Bg) Bg.params(inRogue ? { depth: RG.depthOf(run), boss: !!RG.stageInfo(run).boss, camp: S.screen === 'rogue' && run.phase === 'shop' } : {});
   }
   function applyVeil() { var s = skin(); document.documentElement.style.setProperty('--veil', S.screen === 'game' ? s.veilGame : s.veil); }
 
@@ -87,7 +112,7 @@
       totals: { games: 0, lines: 0, pieces: 0, timeMs: 0, tspins: 0, tetrises: 0, perfect: 0, maxCombo: 0, maxB2b: 0, attack: 0,
                 vsWins: { easy: 0, medium: 0, hard: 0 }, vsLosses: 0 },
       history: [], ach: {}, rogue: { runs: 0, wins: 0, bestStage: 0, run: null },
-      settings: { das: 150, arr: 35, dropRight: false, ghost: true, sound: true, vibrate: true, skin: 'classic', diff: 'medium' } };
+      settings: { das: 150, arr: 35, worlds: true, dropRight: false, ghost: true, sound: true, vibrate: true, skin: 'classic', diff: 'medium' } };
   }
   function merge(dst, src) {
     Object.keys(src || {}).forEach(function (k) {
@@ -199,15 +224,18 @@
     if (save.ach[id]) return;
     var a = ACH.filter(function (x) { return x.id === id; })[0];
     save.ach[id] = Date.now(); persist();
-    toasts.push(a.name); Sfx.play('ach');
+    toasts.push('Trophy unlocked: ' + a.name); Sfx.play('ach');
     if (!toastBusy) nextToast();
   }
   function nextToast() {
     var el = $('toast');
     if (!toasts.length) { toastBusy = false; el.hidden = true; return; }
-    toastBusy = true; el.hidden = false; el.textContent = 'Trophy unlocked: ' + toasts.shift();
+    toastBusy = true; el.hidden = false; el.textContent = toasts.shift();
     setTimeout(nextToast, 2200);
   }
+  function toastMsg(text) { toasts.push(text); Sfx.play('ach'); if (!toastBusy) nextToast(); }
+  var WORLD_SKINS = ['catacombs', 'crystal', 'forge'];
+  function announceWorlds(had) { WORLD_SKINS.forEach(function (id) { if (had.indexOf(id) < 0 && skinUnlocked(id)) toastMsg('New theme unlocked: ' + SKINS[id].name); }); }
   function checkEv(ev) { ACH.forEach(function (a) { if (a.ev && !save.ach[a.id] && a.ev({ ev: ev })) unlock(a.id); }); }
   function checkFin(r) { ACH.forEach(function (a) { if (a.fin && !save.ach[a.id] && a.fin(r)) unlock(a.id); }); }
 
@@ -220,7 +248,7 @@
   function show(name) {
     S.screen = name;
     document.body.classList.toggle('ingame', name === 'game');
-    if (window.Bg) applyVeil();   // no browser panning or zooming while playing
+    syncWorld(); if (window.Bg) applyVeil();   // no browser panning or zooming while playing
     screens.forEach(function (s) { $('screen-' + s).hidden = s !== name; });
     if (name === 'menu') renderMenu();
     if (name === 'stats') renderStats();
@@ -313,7 +341,7 @@
     var s = save.settings;
     $('dasV').textContent = s.das + ' ms'; $('das').value = s.das;
     $('arrV').textContent = s.arr + ' ms'; $('arr').value = s.arr;
-    $('optDropRight').checked = s.dropRight; $('optGhost').checked = s.ghost; $('optSound').checked = s.sound; $('optVib').checked = s.vibrate;
+    $('optWorlds').checked = s.worlds; $('optDropRight').checked = s.dropRight; $('optGhost').checked = s.ghost; $('optSound').checked = s.sound; $('optVib').checked = s.vibrate;
     var html = '';
     Object.keys(SKINS).forEach(function (id) {
       var k = SKINS[id], ok = skinUnlocked(id), v = k.vars;
@@ -593,7 +621,35 @@
     if (spriteCache[key]) return spriteCache[key];
     if (Object.keys(spriteCache).length > 300) spriteCache = {};
     var o = document.createElement('canvas'); o.width = o.height = px; var c = o.getContext('2d'), u = Math.max(1, Math.floor(px / 8));
-    if (style === 'nes') {                       // black outline, flat body, light top-left edge, dark bottom-right edge, white glint
+    var tri = function (x1, y1, x2, y2, x3, y3, fill) { c.fillStyle = fill; c.beginPath(); c.moveTo(x1, y1); c.lineTo(x2, y2); c.lineTo(x3, y3); c.closePath(); c.fill(); };
+    if (style === 'stone') {                     // mortar outline, lit top-left, shaded bottom-right, speckles, moss on some, one chipped corner
+      var hsh = 7; for (var ci = 0; ci < color.length; ci++) hsh = (Math.imul(hsh, 31) + color.charCodeAt(ci)) | 0;
+      var sd = (hsh >>> 0) || 1, rr = function () { sd = (Math.imul(sd, 1664525) + 1013904223) >>> 0; return sd / 4294967296; }, base = mixc(color, '#2e2b26', 0.5);
+      c.fillStyle = '#12100d'; c.fillRect(0, 0, px, px);
+      c.fillStyle = base; c.fillRect(u, u, px - 2 * u, px - 2 * u);
+      c.fillStyle = mixc(color, '#ffffff', 0.25); c.fillRect(u, u, px - 2 * u, Math.max(1, u >> 1)); c.fillRect(u, u, Math.max(1, u >> 1), px - 2 * u);
+      c.fillStyle = mixc(base, '#000000', 0.45); c.fillRect(px - 2 * u, u, u, px - 2 * u); c.fillRect(u, px - 2 * u, px - 2 * u, u);
+      for (var kk = 0; kk < 6; kk++) { c.fillStyle = kk % 2 ? mixc(base, '#ffffff', 0.2) : mixc(base, '#000000', 0.32); c.fillRect(2 * u + Math.floor(rr() * (px - 5 * u)), 2 * u + Math.floor(rr() * (px - 5 * u)), u, u); }
+      if (hsh % 3 === 0) { c.fillStyle = '#4f7a2e'; c.fillRect(u, u, Math.floor(px * 0.45), u); c.fillRect(u, 2 * u, u, u); }
+      c.fillStyle = '#12100d'; c.fillRect(px - 2 * u, u, u, u);
+    } else if (style === 'gem') {                // four facets around a bright table, with a sparkle
+      var m = px / 2, pad = Math.max(1, Math.floor(px / 12));
+      c.fillStyle = mixc(color, '#000000', 0.6); c.fillRect(0, 0, px, px);
+      tri(pad, pad, px - pad, pad, m, m, mixc(color, '#ffffff', 0.55));
+      tri(pad, pad, m, m, pad, px - pad, mixc(color, '#ffffff', 0.12));
+      tri(px - pad, pad, px - pad, px - pad, m, m, mixc(color, '#000000', 0.25));
+      tri(pad, px - pad, px - pad, px - pad, m, m, mixc(color, '#000000', 0.5));
+      c.fillStyle = color; c.fillRect(m - u * 1.5, m - u * 1.5, u * 3, u * 3);
+      c.fillStyle = '#ffffff'; c.fillRect(2 * pad, 2 * pad, Math.max(1, u), Math.max(1, u));
+      c.strokeStyle = mixc(color, '#000000', 0.6); c.lineWidth = 1; c.strokeRect(0.5, 0.5, px - 1, px - 1);
+    } else if (style === 'ember') {              // obsidian with heat from below, a glowing rim and a crack
+      c.fillStyle = '#1a0b09'; c.fillRect(0, 0, px, px);
+      var gr = c.createLinearGradient(0, px, 0, px * 0.2); gr.addColorStop(0, color); gr.addColorStop(1, 'rgba(0,0,0,0)'); c.globalAlpha = 0.5; c.fillStyle = gr; c.fillRect(u, u, px - 2 * u, px - 2 * u); c.globalAlpha = 1;
+      c.strokeStyle = mixc(color, '#000000', 0.12); c.lineWidth = u; c.strokeRect(u / 2, u / 2, px - u, px - u);
+      c.strokeStyle = mixc(color, '#ffffff', 0.5); c.lineWidth = Math.max(1, u * 0.7); c.beginPath();
+      c.moveTo(px * 0.2, px * 0.35); c.lineTo(px * 0.42, px * 0.5); c.lineTo(px * 0.36, px * 0.72); c.lineTo(px * 0.62, px * 0.82); c.stroke();
+      c.beginPath(); c.moveTo(px * 0.42, px * 0.5); c.lineTo(px * 0.72, px * 0.4); c.stroke();
+    } else if (style === 'nes') {                       // black outline, flat body, light top-left edge, dark bottom-right edge, white glint
       c.fillStyle = '#000'; c.fillRect(0, 0, px, px);
       c.fillStyle = color; c.fillRect(u, u, px - 2 * u, px - 2 * u);
       c.fillStyle = mixc(color, '#ffffff', 0.5); c.fillRect(u, u, px - 2 * u, u); c.fillRect(u, u, u, px - 2 * u);
@@ -718,6 +774,11 @@
       c.fillStyle = 'rgba(0,0,0,.45)'; c.fillRect(0, 0, COLS * cs, VIS * cs);
       c.fillStyle = s.vars.accent; c.textAlign = 'center'; c.font = '700 ' + fsz(cs * 4) + 'px ' + fnt();
       c.fillText(n > 0 ? String(Math.min(3, n)) : 'GO', COLS * cs / 2, VIS * cs / 2 + cs * 1.4);
+      if (S.mode === 'rogue' && S.rg && runOf()) {
+        var run0 = runOf(); c.fillStyle = s.vars.accent; c.font = '700 ' + fsz(cs * 0.6) + 'px ' + fnt();
+        c.fillText(RG.worldFor(run0).name, COLS * cs / 2, cs * 5.4);
+        c.fillStyle = s.vars.fg; c.font = '500 ' + fsz(cs * 0.52) + 'px ' + fnt(); c.fillText('Stage ' + (run0.stage + 1) + ': ' + S.rg.st.name, COLS * cs / 2, cs * 6.5);
+      }
       {
         c.fillStyle = s.vars.fg; c.font = '500 ' + fsz(Math.max(10, cs * 0.46)) + 'px ' + fnt();
         c.fillText('Tap left side: rotate \u21BA', COLS * cs / 2, VIS * cs - cs * 6.4);
@@ -809,7 +870,9 @@
     var head = '<div class="rg-chips"><span>Stage <b>' + Math.min(run.stage + 1, 9) + '/9</b></span><span>Lives <b>' + run.lives + '</b></span><span>Coins <b>' + run.coins + '</b></span><span>Seed <b>' + hexSeed(run) + '</b></span></div>';
     if (run.phase === 'intro') {
       var ch = RG.toolCharges(run);
-      body += '<div class="stagecard' + (st.boss ? ' boss' : '') + '"><small>' + (st.boss ? 'BOSS · ' : '') + 'STAGE ' + (run.stage + 1) + ' OF 9</small><h2>' + st.name + '</h2><p class="goal">' + RG.goalText(st, run) + '</p>' +
+      var wd = RG.worldFor(run), arrival = run.stage % 3 === 0 && run.attempt === 0;
+      body += '<div class="worldbar"><small>ACT ' + (RG.actOf(run.stage) + 1) + ' \u00B7 ' + wd.name.toUpperCase() + '</small><p>' + (arrival ? wd.arrive : wd.tag) + '</p></div>';
+      body += '<div class="stagecard' + (st.boss ? ' boss' : '') + '"><small>' + (st.boss ? 'BOSS · ' : '') + 'STAGE ' + (run.stage + 1) + ' OF 9</small><h2>' + st.name + '</h2><p class="flavor">' + st.flavor + '</p><p class="goal">' + RG.goalText(st, run) + '</p>' +
         (st.rule ? '<p class="rule">' + st.rule + '</p>' : '') + '<p class="meta2">Gravity level ' + st.level + '</p></div>';
       if (run.msg) body += '<p class="note">' + run.msg + '</p>';
       body += '<h3>Tool charges each stage</h3><div class="grid3">' + RG.TOOLS.map(function (t) { return '<div class="kv"><span>' + RG.TOOL_INFO[t].name + '</span><b>' + ch[t] + '</b></div>'; }).join('') + '</div>' +
@@ -822,7 +885,7 @@
           return '<button class="rcard' + (r.rare ? ' rare' : '') + '" data-act="rDraft" data-i="' + i + '"><small>' + (r.rare ? 'RARE' : 'COMMON') + '</small><b>' + r.name + '</b><i>' + r.text + '</i></button>';
         }).join('') + '</div><h3>Relics you own</h3>' + relicsHtml(run);
     } else if (run.phase === 'shop') {
-      body += '<h2 class="ph">Shop</h2><p class="note">Interest is paid after each stage: 1 coin per 5 held, up to ' + RG.mods(run).bankCap + '.</p>';
+      body += '<h2 class="ph">Rest stop</h2><p class="note">You make camp in the ' + RG.worldFor(run).short + '. Interest is paid after each stage: 1 coin per 5 held, up to ' + RG.mods(run).bankCap + '.</p>';
       if (RGUI.note) body += '<p class="note warn">' + RGUI.note + '</p>';
       if (RGUI.picker != null) {
         var pit = run.shop.items[RGUI.picker], opts = RG.pickerOptions(run, pit), pinfo = itemInfo(run, pit);
@@ -850,11 +913,14 @@
         '<h3>Final bag</h3>' + deckHtml(run) + '<h3>Relics</h3>' + relicsHtml(run) + '<div class="btns"><button class="btn primary" data-act="rEnd">Back to menu</button></div>';
     }
     $('rogueBody').innerHTML = head + body;
+    syncWorld();
   }
 
   function rogueEnter() {
     Sfx.init();
+    var had = WORLD_SKINS.filter(skinUnlocked);
     if (!save.rogue.run) { save.rogue.run = RG.newRun(); persist(); }
+    announceWorlds(had);
     RGUI.picker = null; RGUI.note = ''; RGUI.abandon = false;
     show('rogue');
   }
@@ -1032,7 +1098,9 @@
     if (S.done) return; S.done = true;
     var run = runOf(), rg = S.rg, st = rg.st, P = S.P, left = rg.budget ? Math.max(0, rg.budget - P.pieces) : 0;
     var rw = RG.clearReward(run, { piecesLeft: left });
+    var hadWorlds = WORLD_SKINS.filter(skinUnlocked);
     rogueTally(); run.coins += rw.total; run.stats.earned += rw.total; run.cleared = run.stage + 1;
+    save.rogue.bestStage = Math.max(save.rogue.bestStage, run.cleared); announceWorlds(hadWorlds);
     if (st.boss) { run.stats.bossesDown++; unlock('rogue_boss'); }
     var last = run.stage === RG.STAGES.length - 1;
     run.msg = 'Stage ' + (run.stage + 1) + ' cleared. +' + (rg.coins + rw.total) + ' coins.';
@@ -1122,6 +1190,7 @@
   });
   $('das').addEventListener('input', function () { save.settings.das = +this.value; $('dasV').textContent = this.value + ' ms'; persist(); });
   $('arr').addEventListener('input', function () { save.settings.arr = +this.value; $('arrV').textContent = this.value + ' ms'; persist(); });
+  $('optWorlds').addEventListener('change', function () { save.settings.worlds = this.checked; persist(); syncWorld(); });
   $('optDropRight').addEventListener('change', function () { save.settings.dropRight = this.checked; persist(); applyPadSide(); });
   $('optGhost').addEventListener('change', function () { save.settings.ghost = this.checked; persist(); });
   $('optSound').addEventListener('change', function () { save.settings.sound = this.checked; persist(); Sfx.init(); Sfx.play('beep'); });

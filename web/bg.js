@@ -187,11 +187,194 @@
     c.globalAlpha = 1;
   }
 
+  // ------------------------------------------------------------------ dungeon worlds (roguelike acts)
+  // P.depth 0-2 is the stage within the act (deeper is darker); P.boss swaps in the boss variant; P.camp draws a campfire (shop).
+  var P = { depth: 0, boss: false, camp: false };
+  function campfire(c, t, light) {
+    var x = W >> 1, y = H - 14, f = ((t * 9) | 0) % 3, pulseK = 1 + 0.1 * Math.sin(t * 17);
+    if (light) { var g = c.createRadialGradient(x, y, 2, x, y, 70 * pulseK); g.addColorStop(0, 'rgba(255,160,60,.35)'); g.addColorStop(1, 'rgba(255,120,30,0)'); c.fillStyle = g; c.fillRect(x - 80, y - 80, 160, 160); }
+    c.fillStyle = '#4a2d18'; c.fillRect(x - 7, y + 4, 14, 3); c.fillRect(x - 5, y + 2, 10, 2); c.fillStyle = '#2d1a0e'; c.fillRect(x - 7, y + 6, 14, 1);
+    c.fillStyle = '#d4461b'; c.fillRect(x - 4, y - 1 + (f === 1 ? 1 : 0), 8, 4);
+    c.fillStyle = '#ff9a2a'; c.fillRect(x - 3, y - 4 - f, 6, 5 + f);
+    c.fillStyle = '#ffdd55'; c.fillRect(x - 1, y - 6 - f, 3, 5);
+  }
+
+  // ---- catacombs: torchlit moss-covered brick, drips, bats; boss hall adds chains and anvil sparks
+  var cat = { wall: null, lc: null, drip: null, splash: null, bat: null, nextDrip: 2, nextBat: 7, sparks: [], nextSpark: 1.5, col: 14 };
+  function catBuild() {
+    var o = offscreen(W, H), c = o.getContext('2d'), r = seeded(21), bh = 7, bw = 13, x, y, i, row;
+    c.fillStyle = '#1e1c18'; c.fillRect(0, 0, W, H);
+    for (y = 0, row = 0; y < H; y += bh, row++) {
+      var off = (row % 2) * (bw >> 1);
+      for (x = -off; x < W; x += bw) {
+        var tone = r(); c.fillStyle = tone < 0.33 ? '#3b3933' : tone < 0.66 ? '#34322c' : '#403d36';
+        c.fillRect(x + 1, y + 1, bw - 1, bh - 1);
+        c.fillStyle = 'rgba(255,255,255,.06)'; c.fillRect(x + 1, y + 1, bw - 1, 1);
+        if (r() < 0.09) { c.fillStyle = '#26241f'; c.fillRect(x + 2 + ((r() * 7) | 0), y + 2, 1, bh - 3); }
+      }
+    }
+    for (i = 0; i < 110; i++) { c.fillStyle = r() < 0.5 ? '#3f5a28' : '#587a34'; c.fillRect((r() * W) | 0, (H * 0.3 + r() * H * 0.7) | 0, 1 + ((r() * 3) | 0), 1); }
+    var cw = cat.col;
+    [0, W - cw].forEach(function (x0, k) {
+      c.fillStyle = '#15130e'; c.fillRect(x0, 0, cw, H);
+      c.fillStyle = '#2b2820'; c.fillRect(k ? x0 : x0 + cw - 2, 0, 2, H);
+      c.fillStyle = '#221f18'; c.fillRect(x0, 0, cw, 7); c.fillRect(x0 - (k ? 2 : 0), 7, cw + 2, 2); c.fillRect(x0, H - 9, cw, 9);
+      for (var yy = 12; yy < H - 12; yy += 9) { c.fillStyle = '#1d1a14'; c.fillRect(x0 + 2 + ((yy * 7) % 5), yy, 3, 1); }
+    });
+    c.strokeStyle = '#15130e'; c.lineWidth = 5; c.beginPath(); c.ellipse(W / 2, 0, W / 2 - cw + 2, 34, 0, 0, Math.PI); c.stroke();
+    cat.wall = o; cat.lc = offscreen(W, H);
+  }
+  function catDraw(c, t, dt) {
+    var d = P.depth, N = [4, 3, 2][d] || 2, amb = [0.52, 0.66, 0.8][d] || 0.7, rad = ([64, 56, 48][d] || 50) * (1 + pulse * 0.3), i, k;
+    c.globalCompositeOperation = 'source-over'; c.drawImage(cat.wall, 0, 0);
+    var cw = cat.col, spots = [[cw + 2, H * 0.28], [W - cw - 3, H * 0.28], [cw + 2, H * 0.62], [W - cw - 3, H * 0.62]].slice(0, N).map(function (q) { return [Math.floor(q[0]), Math.floor(q[1])]; });
+    // water drip
+    cat.nextDrip -= dt;
+    if (cat.nextDrip <= 0 && !cat.drip && !cat.splash) { cat.drip = { x: cw + 4 + Math.floor(Math.random() * (W - 2 * cw - 8)), y: 4, v: 0 }; cat.nextDrip = 2 + Math.random() * 3; }
+    if (cat.drip) { cat.drip.v += 140 * dt; cat.drip.y += cat.drip.v * dt; c.fillStyle = '#7fb4d8'; c.fillRect(cat.drip.x, Math.floor(cat.drip.y), 1, 2); if (cat.drip.y > H - 14) { cat.splash = { x: cat.drip.x, t: 0 }; cat.drip = null; } }
+    if (cat.splash) { cat.splash.t += dt; var sr = Math.floor(cat.splash.t * 14); c.fillStyle = 'rgba(160,200,230,.7)'; c.fillRect(cat.splash.x - sr, H - 13, 1, 1); c.fillRect(cat.splash.x + sr, H - 13, 1, 1); c.fillRect(cat.splash.x, H - 14 - (sr < 2 ? 1 : 0), 1, 1); if (cat.splash.t > 0.4) cat.splash = null; }
+    // bat
+    cat.nextBat -= dt;
+    if (cat.nextBat <= 0 && !cat.bat) { cat.bat = { x: -8, y: H * (0.15 + Math.random() * 0.3), t: 0, dir: Math.random() < 0.5 ? 1 : -1 }; if (cat.bat.dir < 0) cat.bat.x = W + 8; cat.nextBat = 9 + Math.random() * 10; }
+    if (cat.bat) {
+      var b = cat.bat; b.t += dt; b.x += b.dir * 38 * dt; var by = Math.floor(b.y + Math.sin(b.t * 3) * 6), up = ((b.t * 12) | 0) % 2;
+      c.fillStyle = '#0a0908'; c.fillRect(Math.floor(b.x), by, 3, 2); c.fillRect(Math.floor(b.x) - 3, by - (up ? 2 : 0), 3, 1); c.fillRect(Math.floor(b.x) + 3, by - (up ? 2 : 0), 3, 1);
+      if ((b.dir > 0 && b.x > W + 10) || (b.dir < 0 && b.x < -10)) cat.bat = null;
+    }
+    // boss hall: chains and anvil sparks
+    if (P.boss) {
+      for (k = 0; k < 3; k++) { var cx0 = Math.floor(W * (0.25 + k * 0.25)), len = 34 + k * 14;
+        for (i = 0; i < len; i += 3) { var xo = Math.sin(t * 0.9 + k * 2 + i * 0.07) * i * 0.05; c.fillStyle = (i / 3) % 2 ? '#6b6b74' : '#4a4a52'; c.fillRect(Math.floor(cx0 + xo), i, 1, 2); }
+        c.fillStyle = '#8a8a94'; c.fillRect(Math.floor(cx0 + Math.sin(t * 0.9 + k * 2 + len * 0.07) * len * 0.05) - 1, len, 3, 2); }
+      cat.nextSpark -= dt;
+      if (cat.nextSpark <= 0) { for (i = 0; i < 9; i++) cat.sparks.push({ x: W * 0.5, y: H - 20, vx: (Math.random() - 0.5) * 50, vy: -20 - Math.random() * 40, l: 0.6 + Math.random() * 0.5 }); cat.nextSpark = 1.2 + Math.random() * 1.6; }
+      for (i = cat.sparks.length - 1; i >= 0; i--) { var sp = cat.sparks[i]; sp.vy += 120 * dt; sp.x += sp.vx * dt; sp.y += sp.vy * dt; sp.l -= dt; if (sp.l <= 0) { cat.sparks.splice(i, 1); continue; } c.fillStyle = sp.l > 0.3 ? '#ffd24a' : '#ff7a1f'; c.fillRect(Math.floor(sp.x), Math.floor(sp.y), 1, 1); }
+    }
+    // warm tint, then darkness with light pools punched out
+    var warm = P.boss ? '255,90,50' : '255,150,60';
+    c.globalCompositeOperation = 'screen';
+    spots.forEach(function (q, j) { var fl = 1 + 0.12 * Math.sin(t * 13 + j * 2) + 0.06 * Math.sin(t * 31 + j), g = c.createRadialGradient(q[0], q[1], 1, q[0], q[1], rad * fl); g.addColorStop(0, 'rgba(' + warm + ',.32)'); g.addColorStop(1, 'rgba(' + warm + ',0)'); c.fillStyle = g; c.fillRect(q[0] - rad * 1.2, q[1] - rad * 1.2, rad * 2.4, rad * 2.4); });
+    c.globalCompositeOperation = 'source-over';
+    var l = cat.lc.getContext('2d'); l.globalCompositeOperation = 'source-over'; l.clearRect(0, 0, W, H); l.fillStyle = 'rgba(6,5,10,' + amb + ')'; l.fillRect(0, 0, W, H); l.globalCompositeOperation = 'destination-out';
+    spots.forEach(function (q, j) { var fl = 1 + 0.12 * Math.sin(t * 13 + j * 2) + 0.06 * Math.sin(t * 31 + j), g = l.createRadialGradient(q[0], q[1], 2, q[0], q[1], rad * fl); g.addColorStop(0, 'rgba(0,0,0,1)'); g.addColorStop(1, 'rgba(0,0,0,0)'); l.fillStyle = g; l.fillRect(q[0] - rad * 1.3, q[1] - rad * 1.3, rad * 2.6, rad * 2.6); });
+    if (P.camp) { var cg = l.createRadialGradient(W / 2, H - 14, 2, W / 2, H - 14, 78); cg.addColorStop(0, 'rgba(0,0,0,1)'); cg.addColorStop(1, 'rgba(0,0,0,0)'); l.fillStyle = cg; l.fillRect(0, H - 100, W, 100); }
+    c.drawImage(cat.lc, 0, 0);
+    // flames on top so they stay bright
+    var flame = P.boss ? ['#ffb08a', '#ff5030', '#a02010'] : ['#ffdd55', '#ff9a2a', '#d4461b'];
+    spots.forEach(function (q, j) {
+      var f = ((t * 10 + j * 3) | 0) % 3;
+      c.fillStyle = '#5a4a3a'; c.fillRect(q[0] - 1, q[1] + 3, 3, 5); c.fillRect(q[0] - 2, q[1] + 2, 5, 1);
+      c.fillStyle = flame[2]; c.fillRect(q[0] - 1, q[1] - 1 - (f === 2 ? 1 : 0), 3, 4);
+      c.fillStyle = flame[1]; c.fillRect(q[0] - 1, q[1] - 2 - f, 2 + (f === 1 ? 1 : 0), 4);
+      c.fillStyle = flame[0]; c.fillRect(q[0], q[1] - 3 - f, 1, 3);
+    });
+    if (P.camp) campfire(c, t, false);
+  }
+
+  // ---- crystal caverns: stalactites, pulsing crystal clusters, drifting motes, mist (dense mist and eyes for the boss)
+  var cry = { bg: null, clusters: [], motes: [], eyes: null, nextEyes: 5 };
+  var GEMS = ['#5ee7ff', '#8f7bff', '#ff7bd5', '#6dffb8'];
+  function cryBuild() {
+    var o = offscreen(W, H), c = o.getContext('2d'), r = seeded(33), x, i;
+    var g = c.createLinearGradient(0, 0, 0, H); g.addColorStop(0, '#060418'); g.addColorStop(0.6, '#0e0a2c'); g.addColorStop(1, '#170f3c'); c.fillStyle = g; c.fillRect(0, 0, W, H);
+    for (i = 0; i < 220; i++) { c.fillStyle = r() < 0.5 ? 'rgba(120,110,220,.10)' : 'rgba(0,0,0,.18)'; c.fillRect((r() * W) | 0, (r() * H) | 0, 1 + ((r() * 3) | 0), 1); }
+    for (x = -4; x < W; x += 8 + ((r() * 6) | 0)) { var h = 6 + ((r() * 26) | 0), w = 6 + ((r() * 4) | 0); for (var k = 0; k < h; k++) { var ww = Math.max(1, Math.round(w * (1 - k / h))); c.fillStyle = '#04030c'; c.fillRect(x + ((w - ww) >> 1), k, ww, 1); } c.fillStyle = '#1f1a4a'; c.fillRect(x + (w >> 1) - 1, h - 1, 1, 1); }
+    for (x = -2; x < W; x += 10 + ((r() * 8) | 0)) { var hh = 5 + ((r() * 16) | 0), w2 = 7 + ((r() * 4) | 0); for (k = 0; k < hh; k++) { var w3 = Math.max(1, Math.round(w2 * (1 - k / hh))); c.fillStyle = '#04030c'; c.fillRect(x + ((w2 - w3) >> 1), H - 1 - k, w3, 1); } }
+    cry.bg = o; cry.clusters = [];
+    var spots = [[8, 0.72], [W - 10, 0.66], [10, 0.38], [W - 8, 0.34], [W * 0.5, 0.97], [W * 0.22, 0.98], [W * 0.78, 0.98], [14, 0.9], [W - 14, 0.92]];
+    spots.forEach(function (q, n) {
+      var prisms = [], m = 3 + ((r() * 3) | 0);
+      for (var j = 0; j < m; j++) prisms.push({ dx: (j - (m - 1) / 2) * 4 + Math.floor(r() * 3) - 1, h: 7 + ((r() * 12) | 0), w: 3 + ((r() * 2) | 0) });
+      cry.clusters.push({ x: Math.floor(q[0]), y: Math.floor(q[1] * H), col: GEMS[n % 4], ph: r() * 6, prisms: prisms });
+    });
+    cry.motes = []; for (i = 0; i < 34; i++) cry.motes.push({ x: r() * W, y: r() * H, v: 3 + r() * 6, ph: r() * 6 });
+  }
+  function cryDraw(c, t, dt) {
+    var d = P.depth, i, n = [5, 7, 9][d] || 7, bright = ([0.8, 1, 1.2][d] || 1) * (1 + pulse * 0.6);
+    c.globalCompositeOperation = 'source-over'; c.drawImage(cry.bg, 0, 0);
+    for (i = 0; i < n && i < cry.clusters.length; i++) {
+      var cl = cry.clusters[i], pu = (0.65 + 0.35 * Math.sin(t * 1.3 + cl.ph)) * bright;
+      c.globalCompositeOperation = 'screen'; var g = c.createRadialGradient(cl.x, cl.y, 1, cl.x, cl.y, 34); g.addColorStop(0, 'rgba(' + hex(cl.col).join(',') + ',' + (0.3 * pu).toFixed(3) + ')'); g.addColorStop(1, 'rgba(0,0,0,0)'); c.fillStyle = g; c.fillRect(cl.x - 36, cl.y - 36, 72, 72);
+      c.globalCompositeOperation = 'source-over';
+      cl.prisms.forEach(function (pr) {
+        var px = cl.x + pr.dx, top = cl.y - pr.h, w = pr.w;
+        c.fillStyle = mix(cl.col, '#0a0820', 0.45 - 0.2 * Math.min(1, pu)); c.fillRect(px, top + 3, w, pr.h - 3);
+        c.fillStyle = mix(cl.col, '#ffffff', 0.25 * pu); c.fillRect(px, top + 3, 1, pr.h - 3);
+        c.fillStyle = mix(cl.col, '#ffffff', 0.5 * pu); c.fillRect(px + 1, top + 1, Math.max(1, w - 2), 2); c.fillRect(px + (w >> 1), top, 1, 1);
+      });
+    }
+    // drifting motes
+    for (i = 0; i < cry.motes.length; i++) {
+      var m = cry.motes[i]; m.y -= m.v * dt * (1 + pulse * 2); m.x += Math.sin(t * 0.7 + m.ph) * 0.12; if (m.y < -2) { m.y = H + 2; m.x = Math.random() * W; }
+      c.fillStyle = 'rgba(166,240,255,' + (0.25 + 0.4 * Math.abs(Math.sin(t * 1.5 + m.ph))).toFixed(2) + ')'; c.fillRect(Math.floor(m.x), Math.floor(m.y), 1, 1);
+    }
+    // mist bands
+    var bands = P.boss ? 8 : 3, alpha = P.boss ? 0.08 : 0.035;
+    for (i = 0; i < bands; i++) {
+      var y = Math.floor(H * (0.15 + 0.8 * (i / bands)) + Math.sin(t * 0.3 + i) * 5), x0 = Math.floor(((t * (4 + i * 1.7) + i * 40) % (W + 90)) - 80);
+      for (var k = 0; k < 4; k++) { c.fillStyle = 'rgba(150,140,255,' + alpha + ')'; c.fillRect(x0 - k * 5, y - k, 90 + k * 10, 6 + k * 2); }
+    }
+    if (P.boss) {
+      cry.nextEyes -= dt;
+      if (cry.nextEyes <= 0 && !cry.eyes) { cry.eyes = { x: 20 + Math.random() * (W - 40), y: H * (0.3 + Math.random() * 0.4), t: 0 }; cry.nextEyes = 4 + Math.random() * 5; }
+      if (cry.eyes) { cry.eyes.t += dt; var e = cry.eyes, vis = Math.sin(e.t * Math.PI / 2.4); if (vis > 0.2) { c.fillStyle = 'rgba(255,60,80,' + Math.min(1, vis).toFixed(2) + ')'; c.fillRect(Math.floor(e.x), Math.floor(e.y), 2, 1); c.fillRect(Math.floor(e.x) + 5, Math.floor(e.y), 2, 1); } if (e.t > 2.4) cry.eyes = null; }
+    }
+    if (P.camp) { c.globalCompositeOperation = 'screen'; campfire(c, t, true); c.globalCompositeOperation = 'source-over'; campfire(c, t, false); }
+  }
+
+  // ---- ember keep: obsidian pillars, a lava river that rises with depth, drifting embers; vault boss adds floating tetromino outlines
+  var frg = { bg: null, embers: [], shapes: [] };
+  var LAVA = ['#6e1007', '#d4380f', '#ff7a1f', '#ffd24a'];
+  var SHAPE_CELLS = [[[0, 0], [1, 0], [2, 0], [3, 0]], [[0, 0], [1, 0], [0, 1], [1, 1]], [[1, 0], [0, 1], [1, 1], [2, 1]], [[1, 0], [2, 0], [0, 1], [1, 1]], [[0, 0], [1, 0], [1, 1], [2, 1]], [[0, 0], [0, 1], [1, 1], [2, 1]], [[2, 0], [0, 1], [1, 1], [2, 1]]];
+  function frgBuild() {
+    var o = offscreen(W, H), c = o.getContext('2d'), r = seeded(44), x, i;
+    var g = c.createLinearGradient(0, 0, 0, H); g.addColorStop(0, '#08020a'); g.addColorStop(0.7, '#200806'); g.addColorStop(1, '#3a0d06'); c.fillStyle = g; c.fillRect(0, 0, W, H);
+    [['#12060a', 0.75, 20], ['#0b0407', 1, 28]].forEach(function (L) {
+      for (x = -6; x < W + 20; x += L[2] + ((r() * 18) | 0)) {
+        var w = 9 + ((r() * 8) | 0), top = H * (0.12 + r() * 0.28) * L[1];
+        c.fillStyle = L[0]; c.fillRect(x, top, w, H - top); c.fillRect(x - 2, top, w + 4, 4);
+        c.fillStyle = 'rgba(255,110,40,.18)'; c.fillRect(x, top + 4, 1, H - top);
+        for (var wy = top + 12; wy < H * 0.7; wy += 14) { c.fillStyle = 'rgba(255,120,40,.25)'; c.fillRect(x + (w >> 1), wy, 1, 3); }
+      }
+    });
+    frg.bg = o; frg.embers = []; for (i = 0; i < 46; i++) frg.embers.push({ x: r() * W, y: r() * H, v: 8 + r() * 14, ph: r() * 6, s: r() < 0.2 ? 2 : 1 });
+    frg.shapes = []; for (i = 0; i < 6; i++) frg.shapes.push({ x: r() * W, y: r() * H * 0.7, t: (r() * 7) | 0, rot: (r() * 4) | 0, v: 2 + r() * 3, spin: 2 + r() * 3, ph: r() * 8 });
+  }
+  function rotCells(cells, n) { return cells.map(function (q) { return [n - 1 - q[1], q[0]]; }); }
+  function frgDraw(c, t, dt) {
+    var d = P.depth, i, k, lavaH = Math.floor(H * ([0.08, 0.115, 0.15][d] || 0.115));
+    c.globalCompositeOperation = 'source-over'; c.drawImage(frg.bg, 0, 0);
+    if (P.boss) {
+      for (i = 0; i < frg.shapes.length; i++) {
+        var sh = frg.shapes[i]; sh.y -= sh.v * dt; if (sh.y < -14) { sh.y = H - lavaH; sh.x = Math.random() * W; }
+        var cells = SHAPE_CELLS[sh.t], n = sh.t === 0 ? 4 : 3, rr = Math.floor((t / sh.spin + sh.ph) % 4); for (k = 0; k < rr; k++) cells = rotCells(cells, n);
+        c.fillStyle = 'rgba(255,150,70,' + (0.25 + 0.15 * Math.sin(t + sh.ph)).toFixed(2) + ')';
+        cells.forEach(function (q) { var bx = Math.floor(sh.x) + q[0] * 5, by = Math.floor(sh.y) + q[1] * 5; c.fillRect(bx, by, 5, 1); c.fillRect(bx, by + 4, 5, 1); c.fillRect(bx, by, 1, 5); c.fillRect(bx + 4, by, 1, 5); });
+      }
+    }
+    c.globalCompositeOperation = 'screen'; var g = c.createLinearGradient(0, H - lavaH - 50, 0, H - lavaH); g.addColorStop(0, 'rgba(255,90,20,0)'); g.addColorStop(1, 'rgba(255,90,20,' + (0.3 + pulse * 0.25).toFixed(2) + ')'); c.fillStyle = g; c.fillRect(0, H - lavaH - 50, W, 50); c.globalCompositeOperation = 'source-over';
+    for (var row = 0; row < lavaH; row++) {
+      var y = H - lavaH + row, shade = 1 - row / lavaH * 0.5;
+      for (var x = 0; x < W; x += 4) {
+        var v = Math.sin(x * 0.09 + t * 0.8 + row * 0.5) + Math.sin(x * 0.05 - t * 0.5 + row * 0.3), idx = v > 1.1 ? 3 : v > 0.35 ? 2 : v > -0.5 ? 1 : 0;
+        if (row < 2) idx = Math.max(idx, 2); c.fillStyle = idx === 3 && shade < 0.75 ? LAVA[2] : LAVA[idx]; c.fillRect(x, y, 4, 1);
+      }
+    }
+    for (i = 0; i < frg.embers.length; i++) {
+      var e = frg.embers[i]; e.y -= e.v * dt * (1 + pulse * 2.5); e.x += Math.sin(t + e.ph) * 0.18; if (e.y < -2) { e.y = H - lavaH + 2; e.x = Math.random() * W; }
+      var fl = Math.abs(Math.sin(t * 3 + e.ph)); c.fillStyle = fl > 0.5 ? '#ffd24a' : '#ff7a1f'; c.globalAlpha = 0.4 + 0.5 * fl; c.fillRect(Math.floor(e.x), Math.floor(e.y), e.s, e.s); c.globalAlpha = 1;
+    }
+    if (P.camp) { c.globalCompositeOperation = 'screen'; campfire(c, t, true); c.globalCompositeOperation = 'source-over'; campfire(c, t, false); }
+  }
+
   var THEMES = {
     nes: { scale: 3, build: nesBuild, draw: nesDraw, pixel: true },
     snes: { scale: 2, build: snesBuild, draw: snesDraw, pixel: true },
     gb: { scale: 4, build: gbBuild, draw: gbDraw, pixel: true },
-    outrun: { scale: 2, build: outBuild, draw: outDraw, pixel: false }
+    outrun: { scale: 2, build: outBuild, draw: outDraw, pixel: false },
+    catacombs: { scale: 3, build: catBuild, draw: catDraw, pixel: true },
+    crystal: { scale: 3, build: cryBuild, draw: cryDraw, pixel: true },
+    forge: { scale: 3, build: frgBuild, draw: frgDraw, pixel: true }
   };
 
   function resize() {
@@ -203,6 +386,7 @@
   var API = {
     init: function (canvas) { cv = canvas; cx = cv.getContext('2d'); root.addEventListener('resize', resize); },
     set: function (id) { theme = THEMES[id] || null; if (cv) { cv.hidden = !theme; if (theme) resize(); } },
+    params: function (p) { P.depth = p.depth || 0; P.boss = !!p.boss; P.camp = !!p.camp; dirty = true; },
     level: function (n) { if (n !== level) { level = n; dirty = true; } },
     event: function (name) {
       pulse = 1;

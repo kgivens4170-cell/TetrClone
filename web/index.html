@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>TetrClone</title>
 <meta name="claude:viewport-fit-sides" content="cover">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=Press+Start+2P&family=Pixelify+Sans:wght@500;700&family=Orbitron:wght@600;800&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=Press+Start+2P&family=Pixelify+Sans:wght@500;700&family=Orbitron:wght@600;800&family=MedievalSharp&family=Cinzel:wght@600;800&display=swap">
 <style>
 /* Layout: menu and stats scroll; the game screen is one fixed screen (HUD, stats, board, thumb pad).
    Colors are tokens that the chosen skin overrides at runtime. Dark Classic is the default. */
@@ -183,7 +183,14 @@ button.chip:disabled { opacity: .4; cursor: default; }
 .tools button b { color: var(--accent); margin-left: 6px; }
 .tools button.on { background: var(--accent); color: var(--bg); border-color: var(--accent); } .tools button.on b { color: var(--bg); }
 .tools button:disabled { opacity: .4; }
-.hint { min-height: 14px; font-size: 12px; color: var(--accent); text-align: center; }
+.hint { min-height: 14px; font-size: 12px; color: var(--accent); text-align: center; text-shadow: 0 1px 3px #000, 0 0 2px #000; }
+.worldbar { border-left: 3px solid var(--accent); padding: 2px 0 2px 12px; }
+.worldbar small { font-size: 10px; letter-spacing: .16em; color: var(--accent); }
+.worldbar p { margin: 3px 0 0; font-size: 13px; color: var(--dim); }
+.stagecard .flavor { font-size: 13px; color: var(--dim); font-style: italic; }
+html[data-world="catacombs"] .logo h1 { text-shadow: 0 0 14px #ffb347; letter-spacing: .08em; }
+html[data-world="crystal"] .logo h1 { text-shadow: 0 0 14px #7be3ff; letter-spacing: .12em; }
+html[data-world="forge"] .logo h1 { text-shadow: 0 0 16px #ff6a1f; letter-spacing: .06em; }
 /* themes: headings use the theme's heading font; pixel worlds get square, thick-edged, shadowed chrome */
 h1, h2, .stat b, .kv b, .big, .mbest, .mode b, .pad button, .btn, .seg button, .rg-chips b { font-family: var(--fh); }
 .mode, .btn, .panel, .stagecard, .item, .rcard, .pad button, .tools button, .back, .skin, .kv { box-shadow: var(--shadow); }
@@ -244,6 +251,7 @@ html[data-world="outrun"] .stat b, html[data-world="outrun"] .stat.score b { tex
     <div class="set"><label for="arr">Auto-repeat speed (lower is faster) <span id="arrV"></span></label><input type="range" id="arr" min="0" max="100" step="5"></div>
     <h3>Options</h3>
     <p class="empty">Touch the screen anywhere above the buttons: drag to move, tap the left side to rotate left, tap the right side to rotate right, flick down to drop, flick up to hold.</p>
+    <label class="toggle">Roguelike worlds change the theme <input type="checkbox" id="optWorlds"></label>
     <label class="toggle">DROP button on the right (default: left corner) <input type="checkbox" id="optDropRight"></label>
     <label class="toggle">Ghost piece <input type="checkbox" id="optGhost"></label>
     <label class="toggle">Sound effects <input type="checkbox" id="optSound"></label>
