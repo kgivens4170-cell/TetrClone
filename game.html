@@ -31,7 +31,7 @@
 <h1>ELEMENTAL BREAK</h1>
 <div id="wrap"><canvas id="c" width="192" height="240"></canvas></div>
 <p id="hint">MOVE: MOUSE / TOUCH / ← → &nbsp; LAUNCH: CLICK / SPACE<br>
-THE BALL SHIFTS COLOR WITH EVERY BOUNCE</p>
+EVERY HIT SINGS. THE BALL WARMS WITH EVERY BOUNCE.</p>
 
 <script src="brick-palettes.js"></script>
 <script>
@@ -51,6 +51,7 @@ THE BALL SHIFTS COLOR WITH EVERY BOUNCE</p>
   var BASE_SPEED = 96;                  // logical px per second
   var BALL_R = 2;
   var TAU = Math.PI * 2;
+  var COMBO_WINDOW = 1.2;               // seconds between breaks to keep a combo
 
   // Ball colour climbs through these stops as it bounces.
   var BOUNCE_STOPS = ['#ffffff', '#ffe27a', '#ff9a2a', '#ff3a6d', '#c040ff'];
@@ -58,6 +59,7 @@ THE BALL SHIFTS COLOR WITH EVERY BOUNCE</p>
 
   // ---------- Audio: synthesised with Web Audio, no sound files ----------
   var AC = null, MASTER = null;
+  var PAN = 0;                          // stereo position for the next sounds, -1..1
 
   function audio() {
     if (!AC) {
@@ -72,6 +74,15 @@ THE BALL SHIFTS COLOR WITH EVERY BOUNCE</p>
     return AC;
   }
 
+  // Output node for a sound: a stereo panner at PAN when supported.
+  function outNode(ac) {
+    if (!ac.createStereoPanner || PAN === 0) return MASTER;
+    var p = ac.createStereoPanner();
+    p.pan.value = PAN;
+    p.connect(MASTER);
+    return p;
+  }
+
   function tone(f, dur, type, vol, slideTo, delay) {
     var ac = audio(); if (!ac) return;
     var t0 = ac.currentTime + (delay || 0);
@@ -81,7 +92,7 @@ THE BALL SHIFTS COLOR WITH EVERY BOUNCE</p>
     if (slideTo) o.frequency.exponentialRampToValueAtTime(slideTo, t0 + dur);
     gn.gain.setValueAtTime(vol, t0);
     gn.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
-    o.connect(gn); gn.connect(MASTER);
+    o.connect(gn); gn.connect(outNode(ac));
     o.start(t0); o.stop(t0 + dur + 0.05);
   }
 
@@ -100,8 +111,36 @@ THE BALL SHIFTS COLOR WITH EVERY BOUNCE</p>
     var gn = ac.createGain();
     gn.gain.setValueAtTime(vol, t0);
     gn.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
-    src.connect(flt); flt.connect(gn); gn.connect(MASTER);
+    src.connect(flt); flt.connect(gn); gn.connect(outNode(ac));
     src.start(t0); src.stop(t0 + dur + 0.05);
+  }
+
+  // Pitch rises as the ball gets hotter, so long rallies sing higher.
+  function pitchMul() {
+    return 1 + Math.min(ball.bounces, BOUNCE_FULL) / BOUNCE_FULL * 0.6;
+  }
+
+  function panFor(x) {
+    return Math.max(-0.8, Math.min(0.8, (x / LW) * 2 - 1));
+  }
+
+  // Every hit: walls, paddle, and bricks.
+  function sfxWall(x) {
+    var m = pitchMul();
+    PAN = panFor(x);
+    tone(1600 * m, 0.035, 'square', 0.05, 900 * m);
+    noise(0.02, 0.09, 'highpass', 5000, 5000, 1);
+    PAN = 0;
+  }
+
+  function sfxPaddle(hit) {
+    var m = pitchMul();
+    var f = 380 * m * (1 + hit * 0.25);   // hitting the paddle's edge raises the note
+    PAN = panFor(ball.x);
+    tone(f, 0.16, 'triangle', 0.3, f * 1.6);
+    tone(f * 2.01, 0.1, 'sine', 0.1, null, 0.01);
+    noise(0.03, 0.15, 'bandpass', 3000, 1500, 2);
+    PAN = 0;
   }
 
   // One break sound per element. p is a small random pitch factor per break.
@@ -147,16 +186,41 @@ THE BALL SHIFTS COLOR WITH EVERY BOUNCE</p>
     }
   };
 
-  function playBreak(fx) {
+  function sfxBreak(fx, x, mul) {
     var fn = SOUNDS[fx];
-    if (fn) fn(0.94 + Math.random() * 0.12);
+    PAN = panFor(x);
+    if (fn) fn((0.94 + Math.random() * 0.12) * mul);
+    noise(0.04, 0.2, 'highpass', 6000, 3000, 1);   // shared crunch layer
+    PAN = 0;
   }
 
+  function sfxLaunch() {
+    tone(300, 0.25, 'triangle', 0.2, 900);
+    noise(0.25, 0.15, 'bandpass', 500, 2500, 1);
+  }
+
+  function sfxLoss() {
+    tone(440, 0.7, 'sawtooth', 0.12, 70);
+    tone(330, 0.7, 'triangle', 0.15, 55, 0.1);
+  }
+
+  function sfxOver() {
+    tone(220, 1.2, 'triangle', 0.2, 55);
+    tone(261.6, 1.2, 'triangle', 0.12, 65, 0.15);
+  }
+
+  function sfxWin() {
+    var notes = [523, 659, 784, 1047];
+    for (var i = 0; i < notes.length; i++) tone(notes[i], 0.22, 'triangle', 0.2, null, i * 0.09);
+  }
+
+  // ---------- Game state ----------
   var cv = document.getElementById('c');
   var g = cv.getContext('2d');
   g.imageSmoothingEnabled = false;
 
   var state, bricks, ball, paddle, lives, score, time, particles, keys, pointerX;
+  var trail, flash, paddleFlash, recoil, shake, combo, lastBreak, comboColor;
 
   function hexToRgb(h) {
     return [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
@@ -181,6 +245,13 @@ THE BALL SHIFTS COLOR WITH EVERY BOUNCE</p>
     paddle = { x: LW / 2 - PADDLE_W / 2, w: PADDLE_W, h: PADDLE_H, y: PADDLE_Y, vx: 0 };
     ball = newBall();
     particles = [];
+    trail = [];
+    flash = { L: 0, R: 0, T: 0 };
+    paddleFlash = 0;
+    recoil = 0;
+    shake = 0;
+    combo = 0;
+    lastBreak = -10;
     state = 'ready';
     if (full) {
       lives = 3;
@@ -207,12 +278,14 @@ THE BALL SHIFTS COLOR WITH EVERY BOUNCE</p>
     ball.vx = Math.sin(ang) * BASE_SPEED;
     ball.vy = -Math.cos(ang) * BASE_SPEED;
     state = 'play';
+    sfxLaunch();
   }
 
   function bounce() {
     ball.bounces++;
   }
 
+  // ---------- Particles ----------
   // Per-element destruction: how the pixel chunks fly and which sparks appear.
   //   g: gravity (negative rises), drag: air resistance per 1/60 s,
   //   spread: outward speed, kinds: chunk looks, pull: implode toward centre
@@ -240,12 +313,29 @@ THE BALL SHIFTS COLOR WITH EVERY BOUNCE</p>
     });
   }
 
+  // Small burst of ball-coloured pixels when the ball hits a wall or the paddle.
+  // nx, ny is the surface normal, so the sparks fly away from the surface.
+  function impactSparks(x, y, nx, ny, n) {
+    var col = ballColor(ball.bounces);
+    for (var i = 0; i < n; i++) {
+      var s = 40 + Math.random() * 60;
+      spark(x, y, (nx + (Math.random() - 0.5) * 1.2) * s, (ny + (Math.random() - 0.5) * 1.2) * s,
+            120, 0.9, 0.2 + Math.random() * 0.15, col, 'px');
+    }
+  }
+
   // Each pixel of the brick becomes a chunk that flies out from the impact point.
   function shatter(k, hx, hy) {
     var pal = k.pal;
     var prof = SHATTER[pal.fx] || SHATTER.ember;
     var cx = k.x + BW / 2, cy = k.y + BH / 2;
     var windDir = ball.vx >= 0 ? 1 : -1;
+
+    // Impact ring: a quick expanding outline at the hit point
+    pushParticle({
+      x: hx, y: hy, vx: 0, vy: 0, g: 0, drag: 1, life: 0.25, max: 0.25,
+      color: pal.tones[4], kind: 'ring', pull: 0, cx: hx, cy: hy, wob: 0
+    });
 
     for (var y = 0; y < BH; y++) {
       for (var x = 0; x < BW; x++) {
@@ -354,6 +444,12 @@ THE BALL SHIFTS COLOR WITH EVERY BOUNCE</p>
         g.fillRect(x - 1, y, 3, 1); g.fillRect(x, y - 1, 1, 3);
       } else if (q.kind === 'puff') {
         g.globalAlpha *= 0.5; g.fillRect(x, y, 2, 2);
+      } else if (q.kind === 'ring') {
+        var r = Math.round((1 - a) * 9) + 1;
+        g.fillRect(x - r, y - r, 2 * r + 1, 1);
+        g.fillRect(x - r, y + r, 2 * r + 1, 1);
+        g.fillRect(x - r, y - r, 1, 2 * r + 1);
+        g.fillRect(x + r, y - r, 1, 2 * r + 1);
       } else {
         g.fillRect(x, y, 1, 1);
       }
@@ -361,8 +457,58 @@ THE BALL SHIFTS COLOR WITH EVERY BOUNCE</p>
     g.globalAlpha = 1;
   }
 
+  // ---------- Hits ----------
+  function wallHit(side) {
+    bounce();
+    flash[side] = 0.14;
+    var nx = side === 'L' ? 1 : side === 'R' ? -1 : 0;
+    var ny = side === 'T' ? 1 : 0;
+    sfxWall(ball.x);
+    impactSparks(ball.x, ball.y, nx, ny, 3);
+  }
+
+  function paddleHit(hit) {
+    bounce();
+    paddleFlash = 0.14;
+    recoil = 0.06;
+    sfxPaddle(hit);
+    impactSparks(ball.x, ball.y, 0, -1, 5);
+  }
+
+  function brickHit(k, px, py) {
+    k.alive = false;
+    var now = time;
+    combo = (now - lastBreak < COMBO_WINDOW) ? combo + 1 : 1;
+    lastBreak = now;
+    comboColor = k.pal.tones[4];
+    score += 10 * combo;
+
+    // Reflect on the axis we entered through
+    var wasInX = px + BALL_R > k.x && px - BALL_R < k.x + BW;
+    if (wasInX) ball.vy = -ball.vy; else ball.vx = -ball.vx;
+    // Push the ball out so it cannot re-hit next substep
+    if (wasInX) ball.y = py; else ball.x = px;
+
+    shatter(k, ball.x, ball.y);
+    var ladder = Math.pow(2, Math.min(combo - 1, 12) / 6);   // up a semitone per 2 combo hits
+    sfxBreak(k.pal.fx, k.x + BW / 2, pitchMul() * ladder);
+    if (combo >= 3) tone(1568 * ladder, 0.15, 'sine', 0.12, null, 0.05);
+    shake = Math.min(1, shake + 0.35);
+    bounce();
+  }
+
+  // ---------- Main update ----------
   function step(dt) {
     time += dt;
+
+    // Decay visual timers
+    flash.L = Math.max(0, flash.L - dt);
+    flash.R = Math.max(0, flash.R - dt);
+    flash.T = Math.max(0, flash.T - dt);
+    paddleFlash = Math.max(0, paddleFlash - dt);
+    recoil = Math.max(0, recoil - dt);
+    shake = Math.max(0, shake - dt * 3);
+
     // Paddle from keyboard
     var dir = (keys.ArrowLeft ? -1 : 0) + (keys.ArrowRight ? 1 : 0);
     if (dir !== 0) paddle.x += dir * 140 * dt;
@@ -374,6 +520,7 @@ THE BALL SHIFTS COLOR WITH EVERY BOUNCE</p>
     if (state === 'ready') {
       ball.x = paddle.x + PADDLE_W / 2;
       ball.y = PADDLE_Y - BALL_R - 1;
+      trail.length = 0;
       return;
     }
     if (state !== 'play') return;
@@ -388,15 +535,18 @@ THE BALL SHIFTS COLOR WITH EVERY BOUNCE</p>
       collide(px, py);
       if (state !== 'play') return;
     }
+
+    trail.push({ x: ball.x, y: ball.y });
+    if (trail.length > 10) trail.shift();
   }
 
   function collide(px, py) {
     var r = BALL_R;
 
     // Walls
-    if (ball.x - r < 0) { ball.x = r; ball.vx = Math.abs(ball.vx); bounce(); }
-    if (ball.x + r > LW) { ball.x = LW - r; ball.vx = -Math.abs(ball.vx); bounce(); }
-    if (ball.y - r < 0) { ball.y = r; ball.vy = Math.abs(ball.vy); bounce(); }
+    if (ball.x - r < 0) { ball.x = r; ball.vx = Math.abs(ball.vx); wallHit('L'); }
+    if (ball.x + r > LW) { ball.x = LW - r; ball.vx = -Math.abs(ball.vx); wallHit('R'); }
+    if (ball.y - r < 0) { ball.y = r; ball.vy = Math.abs(ball.vy); wallHit('T'); }
 
     // Paddle: only when moving down and crossing its top edge
     if (ball.vy > 0 &&
@@ -409,7 +559,7 @@ THE BALL SHIFTS COLOR WITH EVERY BOUNCE</p>
       ball.vx = Math.sin(ang) * speed;
       ball.vy = -Math.cos(ang) * speed;
       ball.y = paddle.y - r;
-      bounce();
+      paddleHit(hit);
     }
 
     // Bricks
@@ -420,37 +570,36 @@ THE BALL SHIFTS COLOR WITH EVERY BOUNCE</p>
       var cy = Math.max(k.y, Math.min(ball.y, k.y + BH));
       var dx = ball.x - cx, dy = ball.y - cy;
       if (dx * dx + dy * dy > r * r) continue;
-
-      k.alive = false;
-      score += 10;
-      // Reflect on the axis we entered through
-      var wasInX = px + r > k.x && px - r < k.x + BW;
-      if (wasInX) ball.vy = -ball.vy; else ball.vx = -ball.vx;
-      // Push the ball out so it cannot re-hit next substep
-      if (wasInX) ball.y = py;
-      else ball.x = px;
-      shatter(k, ball.x, ball.y);
-      playBreak(k.pal.fx);
-      bounce();
+      brickHit(k, px, py);
       break;
     }
 
     if (bricks.every(function (k) { return !k.alive; })) {
       state = 'won';
+      sfxWin();
       return;
     }
 
     // Floor: lose a life
     if (ball.y - r > LH) {
       lives--;
-      if (lives <= 0) { state = 'over'; return; }
+      sfxLoss();
+      if (lives <= 0) { state = 'over'; sfxOver(); return; }
       reset(false);
     }
   }
 
+  // ---------- Draw ----------
   function draw() {
+    var ox = 0, oy = 0;
+    if (shake > 0) {
+      ox = Math.round((Math.random() - 0.5) * shake * 4);
+      oy = Math.round((Math.random() - 0.5) * shake * 4);
+    }
+    g.setTransform(1, 0, 0, 1, 0, 0);
     g.fillStyle = '#07070d';
     g.fillRect(0, 0, LW, LH);
+    g.setTransform(1, 0, 0, 1, ox, oy);
 
     // Bricks
     for (var b = 0; b < bricks.length; b++) {
@@ -460,30 +609,64 @@ THE BALL SHIFTS COLOR WITH EVERY BOUNCE</p>
 
     drawParticles();
 
-    // Paddle: grey pixel bevel
-    var x = Math.round(paddle.x), y = paddle.y;
+    var col = ballColor(ball.bounces);
+
+    // Wall edge flashes in the ball's colour
+    g.fillStyle = col;
+    if (flash.L > 0) { g.globalAlpha = flash.L / 0.14; g.fillRect(0, 0, 1, LH); }
+    if (flash.R > 0) { g.globalAlpha = flash.R / 0.14; g.fillRect(LW - 1, 0, 1, LH); }
+    if (flash.T > 0) { g.globalAlpha = flash.T / 0.14; g.fillRect(0, 0, LW, 1); }
+    g.globalAlpha = 1;
+
+    // Paddle: grey pixel bevel, flashes in ball colour on hit, recoils, gloss shine
+    var x = Math.round(paddle.x), y = paddle.y + (recoil > 0 ? 1 : 0);
+    var face = paddleFlash > 0 ? col : PADDLE_COLOR.face;
+    g.fillStyle = '#0b0b12'; g.fillRect(x + 1, y + PADDLE_H, PADDLE_W - 2, 1);   // shadow
     g.fillStyle = PADDLE_COLOR.edge; g.fillRect(x, y, PADDLE_W, PADDLE_H);
-    g.fillStyle = PADDLE_COLOR.face; g.fillRect(x + 1, y + 1, PADDLE_W - 2, PADDLE_H - 2);
+    g.fillStyle = face;              g.fillRect(x + 1, y + 1, PADDLE_W - 2, PADDLE_H - 2);
     g.fillStyle = PADDLE_COLOR.hi;   g.fillRect(x + 1, y + 1, PADDLE_W - 2, 1);
     g.fillStyle = PADDLE_COLOR.lo;   g.fillRect(x + 1, y + PADDLE_H - 2, PADDLE_W - 2, 1);
+    if (paddleFlash <= 0) {
+      var shineX = x + 3 + Math.floor(((time * 22) % (PADDLE_W - 8)));
+      g.fillStyle = '#eef0f8';
+      g.fillRect(shineX, y + 1, 2, 1);
+    }
 
-    // Ball: 4x4 pixel blob, corners cut, colour from bounce count
-    var col = ballColor(ball.bounces);
+    // Ball trail: fading ghost pixels
+    for (var i = 0; i < trail.length; i++) {
+      var tp = trail[i];
+      g.globalAlpha = (i + 1) / (trail.length + 2) * 0.5;
+      g.fillStyle = col;
+      g.fillRect(Math.round(tp.x) - 1, Math.round(tp.y) - 1, 2, 2);
+    }
+    g.globalAlpha = 1;
+
+    // Ball: 4x4 pixel blob, corners cut, colour from bounce count, with a highlight
     var bx = Math.round(ball.x - 2), by = Math.round(ball.y - 2);
     g.fillStyle = col;
     g.fillRect(bx + 1, by, 2, 4);
     g.fillRect(bx, by + 1, 4, 2);
+    g.globalAlpha = 0.6;
+    g.fillStyle = '#ffffff';
+    g.fillRect(bx + 1, by + 1, 1, 1);
+    g.globalAlpha = 1;
 
     // HUD
     g.fillStyle = '#8c8ca8';
     g.font = '8px monospace';
     g.textBaseline = 'top';
+    g.textAlign = 'left';
     g.fillText('SCORE ' + score, 4, 4);
     g.textAlign = 'right';
     g.fillText('LIVES ' + lives, LW - 4, 4);
     g.textAlign = 'left';
     g.fillStyle = col;
     g.fillText('BOUNCES ' + ball.bounces, 4, 14);
+    if (combo >= 2 && time - lastBreak < COMBO_WINDOW + 0.4) {
+      g.textAlign = 'right';
+      g.fillStyle = comboColor;
+      g.fillText('x' + combo + ' COMBO', LW - 4, 14);
+    }
 
     // Overlays
     g.textAlign = 'center';
@@ -492,13 +675,15 @@ THE BALL SHIFTS COLOR WITH EVERY BOUNCE</p>
     if (state === 'over') g.fillText('GAME OVER', LW / 2, 150);
     if (state === 'won') g.fillText('CLEARED', LW / 2, 150);
     g.textAlign = 'left';
+
+    g.setTransform(1, 0, 0, 1, 0, 0);
   }
 
   function restartIfEnded() {
     if (state === 'over' || state === 'won') reset(true);
   }
 
-  // Input
+  // ---------- Input ----------
   keys = {};
   window.addEventListener('keydown', function (e) {
     if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') { keys[e.key] = true; e.preventDefault(); }
@@ -523,7 +708,7 @@ THE BALL SHIFTS COLOR WITH EVERY BOUNCE</p>
     if (state === 'ready') launch(); else restartIfEnded();
   });
 
-  // Loop
+  // ---------- Loop ----------
   reset(true);
   time = 0;
   var last = performance.now();
