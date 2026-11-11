@@ -23,6 +23,15 @@ Open `web/index.html` in any browser. No install or build step. Progress is save
 | Versus Bot | Send garbage to a computer opponent (Easy, Medium, Hard) |
 | Roguelike | Nine stages and three bosses. Draft relics, rebuild your bag, reshape pieces (see below) |
 
+**Themes:** a theme restyles the whole game, not just the colors: block look, fonts, UI corners and borders, sound waveform and an animated backdrop. Tap Theme on the menu to cycle, or pick one in Settings.
+- *Classic*, *Neon*, *Paper*, *Terminal*: flat palettes (Neon, Paper and Terminal unlock as you play).
+- *8-Bit*: NES-style black-outlined tiles, block colors that change every level, scanlines, a night sky with a scrolling onion-dome skyline and brick ground. A Tetris or T-spin launches a rocket.
+- *16-Bit*: dithered dusk sky, parallax hills over shimmering water, shiny beveled blocks, shooting stars on big clears.
+- *Handheld*: four greens with an LCD grid, drifting dither and hills, and a different pattern per piece type.
+- *Outrun*: neon grid racing toward a striped sun, glowing tiles, the sun pulses on big clears.
+
+Backdrops live in `web/bg.js`, are drawn at low resolution (about 30 fps) and stand still if the device asks for reduced motion.
+
 **Progress:** personal bests, lifetime stats, game history, 23 trophies, and 4 themes (3 unlockable).
 
 **Controls**
@@ -42,7 +51,7 @@ The whole screen is the touch surface, edges included. The only buttons in play 
 
 Auto-repeat delay and speed are adjustable in Settings.
 
-**Files:** `web/engine.js` (pure game logic), `web/ai.js` (bot), `web/rogue.js` (roguelike rules), `web/app.js` (UI, input, rendering, saves), `web/index.html`.
+**Files:** `web/engine.js` (pure game logic), `web/ai.js` (bot), `web/rogue.js` (roguelike rules), `web/bg.js` (animated backdrops), `web/app.js` (UI, input, rendering, saves), `web/index.html`.
 
 ## Roguelike mode
 

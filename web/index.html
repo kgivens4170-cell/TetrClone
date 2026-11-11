@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>TetrClone</title>
 <meta name="claude:viewport-fit-sides" content="cover">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=Press+Start+2P&family=Pixelify+Sans:wght@500;700&family=Orbitron:wght@600;800&display=swap">
 <style>
 /* Layout: menu and stats scroll; the game screen is one fixed screen (HUD, stats, board, thumb pad).
    Colors are tokens that the chosen skin overrides at runtime. Dark Classic is the default. */
@@ -13,6 +13,8 @@
   --bg: #0d1017; --well: #070a10; --grid: #161b26; --fg: #e6ebf5; --dim: #8791a6;
   --key: #1b2230; --keyhot: #2a3550; --line: #263048; --accent: #ffcf4a; --danger: #ff4d5e;
   --font: "Chakra Petch", ui-monospace, "SF Mono", Menlo, monospace;
+  --fh: "Chakra Petch", ui-monospace, "SF Mono", Menlo, monospace;
+  --r: 10px; --bw: 1px; --shadow: none; --veil: 0;
   color-scheme: dark;
 }
 body { margin: 0; }
@@ -25,7 +27,9 @@ body {
 }
 button { font-family: inherit; color: inherit; }
 button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.screen { height: 100%; overflow-y: auto; }
+.screen { height: 100%; overflow-y: auto; position: relative; z-index: 1; }
+#bg { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 0; pointer-events: none; }
+#bgveil { position: fixed; inset: 0; background: var(--bg); opacity: var(--veil); z-index: 0; pointer-events: none; transition: opacity .3s; }
 .page { max-width: 520px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; padding-bottom: 20px; }
 
 /* menu */
@@ -36,7 +40,7 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
 .logo p { margin: 2px 0 0; font-size: 13px; color: var(--dim); }
 .modes { display: flex; flex-direction: column; gap: 8px; }
 .mode { display: flex; justify-content: space-between; align-items: center; gap: 12px; text-align: left; width: 100%; min-height: 64px;
-  background: var(--key); border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; cursor: pointer; }
+  background: var(--key); border: var(--bw) solid var(--line); border-radius: var(--r); padding: 10px 14px; cursor: pointer; }
 .mode:active { background: var(--keyhot); }
 .mtxt { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .mtxt b { font-size: 17px; letter-spacing: .03em; }
@@ -45,10 +49,10 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
 .mbest { display: flex; flex-direction: column; align-items: flex-end; font-size: 16px; font-weight: 700; color: var(--accent); font-variant-numeric: tabular-nums; flex: none; }
 .mbest small { font-size: 9px; letter-spacing: .14em; color: var(--dim); font-weight: 600; }
 .seg { display: flex; gap: 6px; margin: -2px 0 2px; }
-.seg button { flex: 1; height: 38px; border-radius: 8px; border: 1px solid var(--line); background: transparent; font-size: 13px; font-weight: 600; color: var(--dim); }
+.seg button { flex: 1; height: 38px; border-radius: var(--r); border: var(--bw) solid var(--line); background: transparent; font-size: 13px; font-weight: 600; color: var(--dim); }
 .seg button.on { background: var(--accent); border-color: var(--accent); color: var(--bg); }
 .row2 { display: flex; gap: 8px; }
-.btn { flex: 1; min-height: 46px; border-radius: 10px; border: 1px solid var(--line); background: var(--key); font-size: 15px; font-weight: 600; cursor: pointer; padding: 0 14px; }
+.btn { flex: 1; min-height: 46px; border-radius: var(--r); border: var(--bw) solid var(--line); background: var(--key); font-size: 15px; font-weight: 600; cursor: pointer; padding: 0 14px; }
 .btn:active { background: var(--keyhot); }
 .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--bg); }
 .btn.danger { background: var(--danger); border-color: var(--danger); color: #fff; }
@@ -57,11 +61,11 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
 /* sub screens */
 .top { display: flex; align-items: center; gap: 12px; padding-top: 4px; }
 .top h2 { margin: 0; font-size: 22px; letter-spacing: .06em; }
-.back { width: 44px; height: 44px; border-radius: 10px; border: 1px solid var(--line); background: var(--key); font-size: 20px; cursor: pointer; }
+.back { width: 44px; height: 44px; border-radius: var(--r); border: var(--bw) solid var(--line); background: var(--key); font-size: 20px; cursor: pointer; }
 h3 { margin: 6px 0 0; font-size: 11px; letter-spacing: .16em; text-transform: uppercase; color: var(--dim); font-weight: 600; }
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
-.kv { display: flex; flex-direction: column; gap: 2px; background: var(--key); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; min-width: 0; }
+.kv { display: flex; flex-direction: column; gap: 2px; background: var(--key); border: var(--bw) solid var(--line); border-radius: var(--r); padding: 8px 10px; min-width: 0; }
 .kv span { font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--dim); }
 .kv b { font-size: 18px; font-variant-numeric: tabular-nums; }
 .kv b small { font-size: 10px; color: var(--dim); font-weight: 500; }
@@ -72,7 +76,7 @@ h3 { margin: 6px 0 0; font-size: 11px; letter-spacing: .16em; text-transform: up
 .hv { font-weight: 700; font-variant-numeric: tabular-nums; text-align: right; }
 .hd { color: var(--dim); font-size: 11px; text-align: right; }
 .empty { color: var(--dim); font-size: 13px; margin: 4px 0; }
-.trophy { display: flex; gap: 12px; align-items: center; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; opacity: .55; }
+.trophy { display: flex; gap: 12px; align-items: center; padding: 8px 10px; border: var(--bw) solid var(--line); border-radius: var(--r); opacity: .55; }
 .trophy.got { opacity: 1; background: var(--key); }
 .trophy .tmark { width: 24px; height: 24px; border-radius: 50%; border: 2px solid var(--line); display: flex; align-items: center; justify-content: center; font-size: 14px; flex: none; }
 .trophy.got .tmark { background: var(--accent); border-color: var(--accent); color: var(--bg); }
@@ -84,18 +88,18 @@ h3 { margin: 6px 0 0; font-size: 11px; letter-spacing: .16em; text-transform: up
 .toggle { display: flex; justify-content: space-between; align-items: center; font-size: 15px; min-height: 40px; }
 .toggle input { width: 22px; height: 22px; accent-color: var(--accent); }
 .skins { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-.skin { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; text-align: left; padding: 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--key); cursor: pointer; }
+.skin { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; text-align: left; padding: 10px; border-radius: var(--r); border: var(--bw) solid var(--line); background: var(--key); cursor: pointer; }
 .skin.on { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
 .skin:disabled { opacity: .5; cursor: default; }
 .skin small { font-size: 11px; color: var(--dim); }
-.sw { display: flex; gap: 3px; padding: 5px; border: 1px solid; border-radius: 6px; }
+.sw { display: flex; gap: 3px; padding: 5px; border: 1px solid; border-radius: var(--r); }
 .sw i { width: 14px; height: 14px; display: block; border-radius: 2px; }
 
 /* game */
 .game { display: flex; flex-direction: column; gap: 8px; max-width: 520px; margin: 0 auto; overflow: hidden; }
 .game[hidden] { display: none; }
 .hud { display: flex; align-items: center; gap: 10px; }
-.hud canvas { border: 1px solid var(--line); border-radius: 6px; flex: none; }
+.hud canvas { border: var(--bw) solid var(--line); border-radius: var(--r); flex: none; }
 .hudmid { flex: 1; min-width: 0; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--dim); text-align: center; }
 .statrow { display: flex; gap: 14px; align-items: flex-end; }
 .stat { display: flex; flex-direction: column; min-width: 0; }
@@ -107,12 +111,12 @@ body.ingame, body.ingame * { touch-action: none; }
 #screen-game { touch-action: none; }
 #stage { touch-action: none; }
 #board { touch-action: none; }
-#board, #opp { display: block; border: 1px solid var(--line); border-radius: 4px; background: var(--well); }
+#board, #opp { display: block; border: var(--bw) solid var(--line); border-radius: 4px; background: var(--well); }
 #oppCol { display: flex; flex-direction: column; gap: 6px; align-self: flex-start; }
 #oppInfo { display: flex; flex-direction: column; gap: 1px; font-size: 11px; color: var(--dim); line-height: 1.3; }
 #oppInfo b { color: var(--fg); font-size: 12px; }
 #ov { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,.62); border-radius: 4px; z-index: 5; overflow-y: auto; }
-.panel { background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 16px; width: min(100%, 340px); display: flex; flex-direction: column; gap: 12px; margin: auto; }
+.panel { background: var(--bg); border: var(--bw) solid var(--line); border-radius: var(--r); padding: 16px; width: min(100%, 340px); display: flex; flex-direction: column; gap: 12px; margin: auto; }
 .panel h2 { margin: 0; font-size: 24px; letter-spacing: .08em; text-align: center; text-transform: uppercase; }
 .big { font-size: 38px; font-weight: 700; text-align: center; color: var(--accent); font-variant-numeric: tabular-nums; }
 .big small { display: block; font-size: 11px; letter-spacing: .16em; color: var(--dim); text-transform: uppercase; font-weight: 500; }
@@ -121,19 +125,19 @@ body.ingame, body.ingame * { touch-action: none; }
 .btns { display: flex; flex-direction: column; gap: 8px; }
 .pad { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .pad.flip { flex-direction: row-reverse; }
-.pad button { font: 700 22px var(--font); background: var(--key); border: 1px solid var(--line); border-radius: 14px; touch-action: none; -webkit-tap-highlight-color: transparent; }
+.pad button { font: 700 22px var(--font); background: var(--key); border: var(--bw) solid var(--line); border-radius: var(--r); touch-action: none; -webkit-tap-highlight-color: transparent; }
 .pad button.on, .pad button:active { background: var(--keyhot); }
 .pad .sq { flex: none; width: 60px; height: 60px; padding: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 13px; letter-spacing: .08em; }
 .pad .hard { color: var(--accent); }
 .pad .hard span { font-size: 15px; line-height: 1; }
-.pad #pauseBtn { flex: none; width: 40px; height: 40px; border-radius: 50%; font-size: 14px; letter-spacing: 1px; color: var(--dim); background: transparent; }
+.pad #pauseBtn { flex: none; width: 40px; height: 40px; border-radius: 50%; font-size: 14px; letter-spacing: 1px; color: var(--fg); background: var(--key); }
 #toast { position: fixed; left: 50%; transform: translateX(-50%); top: calc(env(safe-area-inset-top, 0px) + 10px); background: var(--accent); color: var(--bg); font-weight: 700; font-size: 13px; padding: 8px 14px; border-radius: 999px; z-index: 20; white-space: nowrap; max-width: 92vw; overflow: hidden; text-overflow: ellipsis; }
 
 /* roguelike */
 .rg-chips { display: flex; flex-wrap: wrap; gap: 6px; }
-.rg-chips span { background: var(--key); border: 1px solid var(--line); border-radius: 999px; padding: 4px 10px; font-size: 12px; color: var(--dim); }
+.rg-chips span { background: var(--key); border: var(--bw) solid var(--line); border-radius: 999px; padding: 4px 10px; font-size: 12px; color: var(--dim); }
 .rg-chips b { color: var(--fg); font-variant-numeric: tabular-nums; }
-.stagecard { border: 1px solid var(--line); background: var(--key); border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 6px; }
+.stagecard { border: var(--bw) solid var(--line); background: var(--key); border-radius: var(--r); padding: 14px; display: flex; flex-direction: column; gap: 6px; }
 .stagecard.boss { border-color: var(--danger); }
 .stagecard small { font-size: 10px; letter-spacing: .16em; color: var(--dim); }
 .stagecard.boss small { color: var(--danger); }
@@ -145,22 +149,22 @@ body.ingame, body.ingame * { touch-action: none; }
 .ph { margin: 4px 0 0; font-size: 24px; letter-spacing: .06em; }
 .warn { color: var(--danger); }
 .deck { display: flex; flex-wrap: wrap; gap: 8px; }
-.chip { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px; min-width: 64px; min-height: 64px; padding: 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--key); font-size: 11px; color: var(--dim); }
+.chip { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px; min-width: 64px; min-height: 64px; padding: 8px; border: var(--bw) solid var(--line); border-radius: var(--r); background: var(--key); font-size: 11px; color: var(--dim); }
 button.chip { cursor: pointer; font-family: inherit; }
 button.chip:disabled { opacity: .4; cursor: default; }
 .chip .psvg { display: block; }
 .chip em { font-style: normal; font-size: 9px; letter-spacing: .1em; text-transform: uppercase; color: var(--accent); }
 .relics { display: flex; flex-direction: column; gap: 6px; }
-.relic { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; display: flex; flex-direction: column; gap: 1px; }
+.relic { border: var(--bw) solid var(--line); border-radius: var(--r); padding: 8px 10px; display: flex; flex-direction: column; gap: 1px; }
 .relic b { font-size: 14px; } .relic i { font-style: normal; font-size: 12px; color: var(--dim); }
 .cards { display: flex; flex-direction: column; gap: 8px; }
-.rcard { text-align: left; border: 1px solid var(--line); background: var(--key); border-radius: 12px; padding: 12px 14px; display: flex; flex-direction: column; gap: 3px; cursor: pointer; width: 100%; min-height: 72px; }
+.rcard { text-align: left; border: var(--bw) solid var(--line); background: var(--key); border-radius: var(--r); padding: 12px 14px; display: flex; flex-direction: column; gap: 3px; cursor: pointer; width: 100%; min-height: 72px; }
 .rcard:active { background: var(--keyhot); }
 .rcard.rare { border-color: var(--accent); }
 .rcard small { font-size: 10px; letter-spacing: .16em; color: var(--dim); } .rcard.rare small { color: var(--accent); }
 .rcard b { font-size: 17px; } .rcard i { font-style: normal; font-size: 13px; color: var(--dim); }
 .items { display: flex; flex-direction: column; gap: 8px; }
-.item { display: grid; grid-template-columns: auto 1fr auto; gap: 12px; align-items: center; padding: 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--key); }
+.item { display: grid; grid-template-columns: auto 1fr auto; gap: 12px; align-items: center; padding: 10px; border: var(--bw) solid var(--line); border-radius: var(--r); background: var(--key); }
 .item.sold { opacity: .5; }
 .item .ip { min-width: 0; display: flex; justify-content: center; }
 .item .ip:empty { display: none; }
@@ -168,22 +172,43 @@ button.chip:disabled { opacity: .4; cursor: default; }
 .item .it { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .item b { font-size: 15px; } .item i { font-style: normal; font-size: 12px; color: var(--dim); }
 .item em { font-style: normal; font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--accent); }
-.item button { min-width: 96px; min-height: 44px; border-radius: 8px; border: 1px solid var(--accent); background: var(--accent); color: var(--bg); font-weight: 700; font-size: 13px; cursor: pointer; }
+.item button { min-width: 96px; min-height: 44px; border-radius: var(--r); border: 1px solid var(--accent); background: var(--accent); color: var(--bg); font-weight: 700; font-size: 13px; cursor: pointer; }
 .item button:disabled { background: transparent; color: var(--dim); border-color: var(--line); cursor: default; }
-.picker { border: 1px solid var(--accent); border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+.picker { border: 1px solid var(--accent); border-radius: var(--r); padding: 12px; display: flex; flex-direction: column; gap: 10px; }
 .rewards { display: flex; flex-direction: column; gap: 4px; }
 .rrow { display: flex; justify-content: space-between; font-size: 14px; padding: 4px 0; border-bottom: 1px solid var(--line); }
 .rrow span { color: var(--dim); } .rrow b { font-variant-numeric: tabular-nums; }
 .tools { display: flex; gap: 8px; }
-.tools button { flex: 1; height: 44px; border-radius: 10px; border: 1px solid var(--line); background: var(--key); font-size: 13px; font-weight: 700; touch-action: none; -webkit-tap-highlight-color: transparent; }
+.tools button { flex: 1; height: 44px; border-radius: var(--r); border: var(--bw) solid var(--line); background: var(--key); font-size: 13px; font-weight: 700; touch-action: none; -webkit-tap-highlight-color: transparent; }
 .tools button b { color: var(--accent); margin-left: 6px; }
 .tools button.on { background: var(--accent); color: var(--bg); border-color: var(--accent); } .tools button.on b { color: var(--bg); }
 .tools button:disabled { opacity: .4; }
 .hint { min-height: 14px; font-size: 12px; color: var(--accent); text-align: center; }
+/* themes: headings use the theme's heading font; pixel worlds get square, thick-edged, shadowed chrome */
+h1, h2, .stat b, .kv b, .big, .mbest, .mode b, .pad button, .btn, .seg button, .rg-chips b { font-family: var(--fh); }
+.mode, .btn, .panel, .stagecard, .item, .rcard, .pad button, .tools button, .back, .skin, .kv { box-shadow: var(--shadow); }
+html[data-pix] .logo h1 { font-size: 20px; letter-spacing: .02em; line-height: 1.3; }
+html[data-pix] .top h2, html[data-pix] .ph, html[data-pix] .panel h2 { font-size: 15px; line-height: 1.4; }
+html[data-pix] .stagecard h2 { font-size: 17px; line-height: 1.3; }
+html[data-pix] .stat b { font-size: 14px; } html[data-pix] .kv b { font-size: 12px; } html[data-pix] .big { font-size: 24px; }
+html[data-pix] .mode b { font-size: 12px; line-height: 1.4; } html[data-pix] .mbest { font-size: 12px; }
+html[data-pix] .stat span, html[data-pix] .kv span, html[data-pix] h3 { letter-spacing: .06em; }
+html[data-pix] .btn, html[data-pix] .seg button { font-size: 11px; }
+html[data-pix] .pad .sq { font-size: 9px; } html[data-pix] .pad .hard span { font-size: 12px; }
+html[data-pix] .rg-chips span { font-size: 11px; }
+html[data-pix] button:active { transform: translate(2px, 2px); box-shadow: none; }
+html[data-world="snes"] .logo h1 { font-size: 34px; letter-spacing: .06em; text-shadow: 3px 3px 0 #000, 0 0 12px #ff8a4d; }
+html[data-world="nes"] .logo h1 { text-shadow: 3px 3px 0 #d82800; }
+html[data-world="nes"] body::after { content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 50; background: repeating-linear-gradient(to bottom, rgba(0,0,0,.16) 0, rgba(0,0,0,.16) 1px, transparent 1px, transparent 3px); }
+html[data-world="gb"] body::after { content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 50; background: linear-gradient(rgba(15,56,15,.14) 1px, transparent 1px) 0 0 / 3px 3px, linear-gradient(90deg, rgba(15,56,15,.14) 1px, transparent 1px) 0 0 / 3px 3px; }
+html[data-world="outrun"] .logo h1 { text-shadow: 0 0 18px #ff3ea5, 0 0 3px #fff; letter-spacing: .1em; }
+html[data-world="outrun"] .stat b, html[data-world="outrun"] .stat.score b { text-shadow: 0 0 10px currentColor; }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 </style>
 </head>
 <body>
+<canvas id="bg" hidden></canvas>
+<div id="bgveil"></div>
 
 <section id="screen-menu" class="screen">
   <div class="page">
@@ -194,7 +219,8 @@ button.chip:disabled { opacity: .4; cursor: default; }
     </div>
     <div id="modes" class="modes"></div>
     <div class="row2">
-      <button class="btn" id="goStats">Stats and trophies <small id="trophyCount"></small></button>
+      <button class="btn" id="goStats">Stats <small id="trophyCount"></small></button>
+      <button class="btn" id="cycleTheme">Theme <small id="themeName"></small></button>
       <button class="btn" id="goSettings">Settings</button>
     </div>
   </div>
@@ -269,6 +295,7 @@ button.chip:disabled { opacity: .4; cursor: default; }
 <div id="toast" hidden></div>
 
 <script src="engine.js"></script>
+<script src="bg.js"></script>
 <script src="ai.js"></script>
 <script src="rogue.js"></script>
 <script src="app.js"></script>

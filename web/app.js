@@ -8,36 +8,76 @@
   try { reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) {}
 
   // ---------------------------------------------------------------- skins
+  // A theme ("world") restyles everything: palette, block look, fonts, UI corners, sound waveform and the animated backdrop.
+  var SKIN_DEFAULTS = { cell: 'flat', bg: null, fh: '"Chakra Petch"', font: '"Chakra Petch"', fhs: 1, fscale: 1, r: '10px', bw: '1px', shadow: 'none',
+                        wave: null, grid: true, veil: 0.5, veilGame: 0.15, desc: '', levelPal: null, pix: false };
   var SKINS = {
-    classic: { name: 'Classic', colors: ['#2fe6e6', '#f2e233', '#a64ef0', '#3ee05a', '#f04a4a', '#4a6cf5', '#f5a03a'], garbage: '#59627a',
+    classic: { name: 'Classic', desc: 'Clean and flat. Nothing moves.', colors: ['#2fe6e6', '#f2e233', '#a64ef0', '#3ee05a', '#f04a4a', '#4a6cf5', '#f5a03a'], garbage: '#59627a',
       vars: { bg: '#0d1017', well: '#070a10', grid: '#161b26', fg: '#e6ebf5', dim: '#8791a6', key: '#1b2230', keyhot: '#2a3550', line: '#263048', accent: '#ffcf4a', scheme: 'dark' },
       need: null },
-    neon: { name: 'Neon', colors: ['#00f0ff', '#fff200', '#c24bff', '#39ff7a', '#ff3b5c', '#4d7cff', '#ff9d00'], garbage: '#5b4a85',
+    nes: { name: '8-Bit', desc: 'Cartridge-era blocks, a night skyline and colors that change every level. A Tetris launches a rocket.',
+      colors: ['#3cbcfc', '#fcfcfc', '#0058f8', '#58d854', '#f83800', '#0058f8', '#fca044'], garbage: '#7c7c7c', cell: 'nes', bg: 'nes', fh: '"Press Start 2P"', font: '"Pixelify Sans"', fhs: 0.6, fscale: 0.72, r: '0px', bw: '3px',
+      shadow: '4px 4px 0 rgba(0,0,0,.6)', wave: 'square', grid: false, pix: true, veil: 0.45, veilGame: 0.1,
+      levelPal: [['#0058f8', '#3cbcfc', '#fcfcfc'], ['#00a800', '#58d854', '#b8f818'], ['#d800cc', '#f878f8', '#fcfcfc'], ['#0058f8', '#58d854', '#fcfcfc'], ['#e40058', '#58f898', '#fcfcfc'],
+                 ['#58f898', '#6888fc', '#fcfcfc'], ['#f83800', '#7c7c7c', '#fcfcfc'], ['#6844fc', '#a80020', '#fcfcfc'], ['#0058f8', '#f83800', '#fcfcfc'], ['#f83800', '#fca044', '#fcfcfc']],
+      vars: { bg: '#000014', well: '#000000', grid: '#000000', fg: '#fcfcfc', dim: '#b4b4d8', key: '#0c1048', keyhot: '#2038c8', line: '#7c7cfc', accent: '#fcb800', scheme: 'dark' }, need: null },
+    snes: { name: '16-Bit', desc: 'A dusk sky, parallax hills over water, and shiny beveled blocks.',
+      colors: ['#52e0ff', '#ffe14d', '#c27bff', '#5cf07a', '#ff5c6a', '#6b8cff', '#ffa14d'], garbage: '#6d6a8f', cell: 'bevel', bg: 'snes', fh: '"Pixelify Sans"', font: '"Pixelify Sans"', fhs: 1, fscale: 1, r: '0px', bw: '2px',
+      shadow: '3px 3px 0 rgba(0,0,0,.5)', wave: 'triangle', pix: true, veil: 0.4, veilGame: 0.05,
+      vars: { bg: '#1a1440', well: '#0e0a26', grid: '#241c52', fg: '#fff1e0', dim: '#c3b4e2', key: '#2b2160', keyhot: '#43358a', line: '#7a68d0', accent: '#ffd24d', scheme: 'dark' }, need: null },
+    gb: { name: 'Handheld', desc: 'Four shades of green on a pocket screen with an LCD grid.',
+      colors: ['#0f380f', '#306230', '#0f3810', '#306231', '#0f3811', '#306232', '#0f3812'], garbage: '#306230', cell: 'gb', bg: 'gb', fh: '"Press Start 2P"', font: '"Pixelify Sans"', fhs: 0.6, fscale: 0.7, r: '0px', bw: '3px',
+      shadow: '3px 3px 0 #0f380f', wave: 'square', grid: false, pix: true, veil: 0.1, veilGame: 0,
+      vars: { bg: '#9bbc0f', well: '#8bac0f', grid: '#7f9f0d', fg: '#0f380f', dim: '#306230', key: '#8bac0f', keyhot: '#6f8f0b', line: '#0f380f', accent: '#0f380f', scheme: 'light' }, need: null },
+    outrun: { name: 'Outrun', desc: 'Neon grid racing at a striped sun, with glowing blocks.',
+      colors: ['#22d3ee', '#ffe14d', '#c084fc', '#4ade80', '#ff3ea5', '#6d8bff', '#ff9f43'], garbage: '#4b3f72', cell: 'glow', bg: 'outrun', fh: '"Orbitron"', font: '"Chakra Petch"', fhs: 0.8, fscale: 0.85, r: '2px', bw: '1px',
+      shadow: '0 0 14px rgba(255,62,165,.35)', wave: 'sawtooth', veil: 0.25, veilGame: 0.05,
+      vars: { bg: '#0b0220', well: '#07010f', grid: '#2a0a52', fg: '#ffe8ff', dim: '#bba2dc', key: '#1d0a3a', keyhot: '#35145f', line: '#7a2bbf', accent: '#ff3ea5', scheme: 'dark' }, need: null },
+    neon: { name: 'Neon', desc: 'Dark purple with hot pink.', colors: ['#00f0ff', '#fff200', '#c24bff', '#39ff7a', '#ff3b5c', '#4d7cff', '#ff9d00'], garbage: '#5b4a85',
       vars: { bg: '#0a0614', well: '#06030f', grid: '#1c1233', fg: '#f3e9ff', dim: '#9484b8', key: '#1d1433', keyhot: '#33224f', line: '#3a2a5c', accent: '#ff3ea5', scheme: 'dark' },
       need: 'Play 3 games' },
-    paper: { name: 'Paper', colors: ['#1aa5b8', '#d9a400', '#8a4fc9', '#2e9e4f', '#d64545', '#3e5fd1', '#d9822b'], garbage: '#8b94a8',
+    paper: { name: 'Paper', desc: 'Light and calm.', colors: ['#1aa5b8', '#d9a400', '#8a4fc9', '#2e9e4f', '#d64545', '#3e5fd1', '#d9822b'], garbage: '#8b94a8',
       vars: { bg: '#e8ecf3', well: '#ffffff', grid: '#d6dce8', fg: '#1b2433', dim: '#5d6980', key: '#d6dce8', keyhot: '#c1cade', line: '#bcc5d8', accent: '#c93a0c', scheme: 'light' },
       need: 'Clear 100 lines in total' },
-    terminal: { name: 'Terminal', colors: ['#7dff7d', '#c8ff7d', '#4fd16b', '#a0ff4f', '#3fa84f', '#7dd6a0', '#d6ff9a'], garbage: '#2f5a2f',
+    terminal: { name: 'Terminal', desc: 'Green phosphor.', colors: ['#7dff7d', '#c8ff7d', '#4fd16b', '#a0ff4f', '#3fa84f', '#7dd6a0', '#d6ff9a'], garbage: '#2f5a2f',
       vars: { bg: '#050a05', well: '#020502', grid: '#0e1d0e', fg: '#b6f5b6', dim: '#5a9a5a', key: '#0f1f0f', keyhot: '#1b3a1b', line: '#1f4a1f', accent: '#7dff7d', scheme: 'dark' },
       need: 'Beat the Medium bot' }
   };
   var DANGER = '#ff4d5e';
   var EXTRA_COLORS = ['#ff7ac8', '#e8eef7', '#27d3a2', '#b7a6ff', '#ffb4a2', '#ffd166', '#8bd3ff'];
-  function pal(i) { return i < 7 ? skin().colors[i] : EXTRA_COLORS[(i - 7) % EXTRA_COLORS.length]; }
-  function skin() { return SKINS[save.settings.skin] || SKINS.classic; }
+  var LGROUP = [1, 2, 0, 1, 0, 1, 0];   // which of a level palette's three colors each standard piece uses
+  var skinCache = { id: null, obj: null };
+  function skin() {
+    var id = SKINS[save.settings.skin] ? save.settings.skin : 'classic';
+    if (skinCache.id !== id) { skinCache = { id: id, obj: Object.assign({}, SKIN_DEFAULTS, SKINS[id]) }; }
+    return skinCache.obj;
+  }
+  function pal(i) {
+    var s = skin();
+    if (s.levelPal) { var lv = S.screen === 'game' && S.P ? S.P.level : 1, tri = s.levelPal[(lv - 1) % 10]; return tri[i < 7 ? LGROUP[i] : 2]; }
+    if (i < 7) return s.colors[i];
+    return s.pix ? s.colors[i % 7] : EXTRA_COLORS[(i - 7) % EXTRA_COLORS.length];
+  }
+  function fnt() { return skin().fh + ', system-ui, sans-serif'; }
+  function fsz(n) { return Math.max(7, Math.round(n * skin().fscale)); }
   function skinUnlocked(id) {
-    if (id === 'classic') return true;
     if (id === 'neon') return save.totals.games >= 3;
     if (id === 'paper') return save.totals.lines >= 100;
     if (id === 'terminal') return !!save.ach.beat_medium;
-    return false;
+    return true;
   }
   function applySkin() {
-    var s = skin(), v = s.vars, st = document.documentElement.style;
+    var s = skin(), v = s.vars, st = document.documentElement.style, root = document.documentElement;
     ['bg', 'well', 'grid', 'fg', 'dim', 'key', 'keyhot', 'line', 'accent'].forEach(function (k) { st.setProperty('--' + k, v[k]); });
     st.setProperty('color-scheme', v.scheme);
+    st.setProperty('--font', s.font + ', ui-monospace, "SF Mono", Menlo, monospace');
+    st.setProperty('--fh', s.fh + ', ui-monospace, "SF Mono", Menlo, monospace');
+    st.setProperty('--r', s.r); st.setProperty('--bw', s.bw); st.setProperty('--shadow', s.shadow);
+    root.dataset.world = save.settings.skin; if (s.pix && s.fhs < 1) root.dataset.pix = '1'; else delete root.dataset.pix;
+    spriteCache = {};
+    if (window.Bg) { Bg.set(s.bg); applyVeil(); }
   }
+  function applyVeil() { var s = skin(); document.documentElement.style.setProperty('--veil', S.screen === 'game' ? s.veilGame : s.veil); }
 
   // ---------------------------------------------------------------- save data
   var KEY = 'tetrclone.save.v1';
@@ -86,7 +126,7 @@
       if (!save.settings.sound || !this.ctx) return;
       try {
         var c = this.ctx, t = c.currentTime + (delay || 0), o = c.createOscillator(), g = c.createGain();
-        o.type = type || 'square'; o.frequency.setValueAtTime(f, t);
+        o.type = skin().wave || type || 'square'; o.frequency.setValueAtTime(f, t);
         if (slide) o.frequency.exponentialRampToValueAtTime(Math.max(30, f * slide), t + d);
         g.gain.setValueAtTime(vol || 0.05, t); g.gain.exponentialRampToValueAtTime(0.0001, t + d);
         o.connect(g); g.connect(c.destination); o.start(t); o.stop(t + d + 0.02);
@@ -179,7 +219,8 @@
   var screens = ['menu', 'game', 'stats', 'settings', 'rogue'];
   function show(name) {
     S.screen = name;
-    document.body.classList.toggle('ingame', name === 'game');   // no browser panning or zooming while playing
+    document.body.classList.toggle('ingame', name === 'game');
+    if (window.Bg) applyVeil();   // no browser panning or zooming while playing
     screens.forEach(function (s) { $('screen-' + s).hidden = s !== name; });
     if (name === 'menu') renderMenu();
     if (name === 'stats') renderStats();
@@ -196,6 +237,11 @@
     if (m === 'rogue') { var rn = save.rogue.run; if (rn) return 'Stage ' + Math.min(rn.stage + 1, 9); return save.rogue.bestStage ? 'Stage ' + save.rogue.bestStage : ''; }
     if (m === 'versus') { var w = save.totals.vsWins; var t = w.easy + w.medium + w.hard; return t ? t + (t === 1 ? ' win' : ' wins') : ''; }
     return '';
+  }
+
+  function cycleTheme() {
+    var ids = Object.keys(SKINS).filter(skinUnlocked), at = ids.indexOf(save.settings.skin);
+    save.settings.skin = ids[(at + 1) % ids.length]; persist(); applySkin(); renderMenu();
   }
 
   function renderMenu() {
@@ -216,6 +262,7 @@
     $('modes').innerHTML = html;
     var got = Object.keys(save.ach).length;
     $('trophyCount').textContent = got + '/' + ACH.length;
+    $('themeName').textContent = skin().name;
   }
 
   function renderStats() {
@@ -273,7 +320,7 @@
       html += '<button class="skin ' + (s.skin === id ? 'on' : '') + '" data-skin="' + id + '"' + (ok ? '' : ' disabled') + '>' +
         '<span class="sw" style="background:' + v.well + ';border-color:' + v.line + '">' +
         k.colors.slice(0, 4).map(function (c) { return '<i style="background:' + c + '"></i>'; }).join('') + '</span>' +
-        '<b>' + k.name + '</b><small>' + (ok ? (s.skin === id ? 'In use' : 'Unlocked') : 'Locked: ' + k.need) + '</small></button>';
+        '<b>' + k.name + '</b><small>' + (ok ? (s.skin === id ? 'In use' : (k.desc || 'Unlocked')) : 'Locked: ' + k.need) + '</small></button>';
     });
     $('skins').innerHTML = html;
     $('resetBtn').textContent = resetArmed ? 'Tap again to erase all progress' : 'Erase all progress';
@@ -418,6 +465,7 @@
     if (ev.perfect) sub.push('PERFECT CLEAR');
     if (ev.attack > 0 && S.O) sub.push('+' + ev.attack + ' GARBAGE');
     popup(title, sub.join('  ·  '), ev.n === 4 || ev.tspin ? 'accent' : 'fg');
+    if (window.Bg) Bg.event(ev.n === 4 || ev.tspin ? 'big' : 'clear');
     Sfx.play(ev.tspin ? 'tspin' : ev.n === 4 ? 'tetris' : 'clear', ev.n);
     buzz(ev.n === 4 ? 70 : 25);
     ev.cleared.forEach(function (row) {
@@ -534,8 +582,56 @@
   if (window.ResizeObserver) new ResizeObserver(function () { if (S.screen === 'game') fit(); }).observe($('stage'));
 
   function col(v) { return v === 99 ? skin().garbage : pal(v - 1); }
+  var spriteCache = {};
+  function mixc(a, b, t) {
+    function h(x) { return [parseInt(x.slice(1, 3), 16), parseInt(x.slice(3, 5), 16), parseInt(x.slice(5, 7), 16)]; }
+    var A = h(a), B = h(b); return 'rgb(' + Math.round(A[0] + (B[0] - A[0]) * t) + ',' + Math.round(A[1] + (B[1] - A[1]) * t) + ',' + Math.round(A[2] + (B[2] - A[2]) * t) + ')';
+  }
+  /** Pre-rendered block tile for the non-flat styles, so drawing a board stays cheap. */
+  function sprite(style, color, s) {
+    var px = Math.max(4, Math.round(s * dpr)), key = style + color + px;
+    if (spriteCache[key]) return spriteCache[key];
+    if (Object.keys(spriteCache).length > 300) spriteCache = {};
+    var o = document.createElement('canvas'); o.width = o.height = px; var c = o.getContext('2d'), u = Math.max(1, Math.floor(px / 8));
+    if (style === 'nes') {                       // black outline, flat body, light top-left edge, dark bottom-right edge, white glint
+      c.fillStyle = '#000'; c.fillRect(0, 0, px, px);
+      c.fillStyle = color; c.fillRect(u, u, px - 2 * u, px - 2 * u);
+      c.fillStyle = mixc(color, '#ffffff', 0.5); c.fillRect(u, u, px - 2 * u, u); c.fillRect(u, u, u, px - 2 * u);
+      c.fillStyle = mixc(color, '#000000', 0.35); c.fillRect(px - 2 * u, u, u, px - 2 * u); c.fillRect(u, px - 2 * u, px - 2 * u, u);
+      c.fillStyle = '#fff'; c.fillRect(2 * u, 2 * u, 2 * u, 2 * u);
+    } else if (style === 'bevel') {              // gradient body, hard bevel, sparkle
+      var g = c.createLinearGradient(0, 0, px, px); g.addColorStop(0, mixc(color, '#ffffff', 0.5)); g.addColorStop(0.5, color); g.addColorStop(1, mixc(color, '#000000', 0.45));
+      c.fillStyle = g; c.fillRect(0, 0, px, px);
+      var e = Math.max(1, Math.round(px / 10));
+      c.fillStyle = 'rgba(255,255,255,.65)'; c.fillRect(0, 0, px, e); c.fillRect(0, 0, e, px);
+      c.fillStyle = 'rgba(0,0,0,.4)'; c.fillRect(0, px - e, px, e); c.fillRect(px - e, 0, e, px);
+      c.fillStyle = 'rgba(255,255,255,.9)'; c.fillRect(2 * e, 2 * e, 2 * e, e);
+      c.strokeStyle = 'rgba(0,0,0,.55)'; c.lineWidth = 1; c.strokeRect(0.5, 0.5, px - 1, px - 1);
+    } else if (style === 'gb') {                 // four-shade greens with a different pattern per piece
+      var idx = Math.max(0, skin().colors.indexOf(color)) + (color === skin().garbage ? 3 : 0);
+      c.fillStyle = '#0f380f'; c.fillRect(0, 0, px, px);
+      c.fillStyle = '#8bac0f'; c.fillRect(u, u, px - 2 * u, px - 2 * u);
+      c.fillStyle = idx % 4 === 0 ? '#306230' : idx % 4 === 1 ? '#0f380f' : idx % 4 === 2 ? '#306230' : '#9bbc0f';
+      if (idx % 4 === 0) c.fillRect(2 * u, 2 * u, px - 4 * u, px - 4 * u);
+      else if (idx % 4 === 1) { for (var yy = 2 * u; yy < px - 2 * u; yy += 2 * u) for (var xx = 2 * u + ((yy / u / 2) % 2) * u; xx < px - 2 * u; xx += 2 * u) c.fillRect(xx, yy, u, u); }
+      else if (idx % 4 === 2) { for (var ly = 2 * u; ly < px - 2 * u; ly += 2 * u) c.fillRect(2 * u, ly, px - 4 * u, u); }
+      else { c.fillRect(2 * u, 2 * u, px - 4 * u, px - 4 * u); c.fillStyle = '#306230'; c.fillRect(3 * u, 3 * u, px - 6 * u, px - 6 * u); }
+    } else {                                     // glow: dark tinted tile with a bright neon edge
+      c.fillStyle = mixc(color, '#000000', 0.72); c.fillRect(0, 0, px, px);
+      c.shadowColor = color; c.shadowBlur = px * 0.3; c.strokeStyle = color; c.lineWidth = Math.max(1.5, px / 11);
+      c.strokeRect(c.lineWidth, c.lineWidth, px - 2 * c.lineWidth, px - 2 * c.lineWidth); c.shadowBlur = 0;
+      c.fillStyle = 'rgba(255,255,255,.3)'; c.fillRect(u * 2, u * 2, px - 4 * u, Math.max(1, u / 2));
+    }
+    spriteCache[key] = o; return o;
+  }
   function cell(c, x, y, s, color, alpha) {
+    var style = skin().cell;
     c.globalAlpha = alpha == null ? 1 : alpha;
+    if (style !== 'flat') {
+      c.imageSmoothingEnabled = style === 'bevel' || style === 'glow';
+      c.drawImage(sprite(style, color, s), x, y, s, s);
+      c.globalAlpha = 1; return;
+    }
     c.fillStyle = color; c.fillRect(x + 0.5, y + 0.5, s - 1, s - 1);
     if (alpha == null) {
       var e = Math.max(1.5, s * 0.13);
@@ -554,10 +650,12 @@
   function drawBoard(c, e, cs, o) {
     var s = skin(), w = COLS * cs, h = VIS * cs, x, y;
     c.fillStyle = s.vars.well; c.fillRect(0, 0, w, h);
-    c.strokeStyle = s.vars.grid; c.lineWidth = 1; c.beginPath();
-    for (x = 1; x < COLS; x++) { c.moveTo(x * cs + 0.5, 0); c.lineTo(x * cs + 0.5, h); }
-    for (y = 1; y < VIS; y++) { c.moveTo(0, y * cs + 0.5); c.lineTo(w, y * cs + 0.5); }
-    c.stroke();
+    if (s.grid) {
+      c.strokeStyle = s.vars.grid; c.lineWidth = 1; c.beginPath();
+      for (x = 1; x < COLS; x++) { c.moveTo(x * cs + 0.5, 0); c.lineTo(x * cs + 0.5, h); }
+      for (y = 1; y < VIS; y++) { c.moveTo(0, y * cs + 0.5); c.lineTo(w, y * cs + 0.5); }
+      c.stroke();
+    }
     for (y = HID; y < H; y++) for (x = 0; x < COLS; x++) { var v = e.board[y][x]; if (v) cell(c, x * cs, (y - HID) * cs, cs, col(v)); }
     if (!e.over) {
       var cells = e.cells(), i, q, pc = pal(e.cur.color);
@@ -608,20 +706,20 @@
       var a = pu.t < 900 ? 1 : 1 - (pu.t - 900) / 500, yy = cs * 6 - pu.t * 0.012 * cs / 6 + i * cs * 1.6;
       c.globalAlpha = Math.max(0, a); c.textAlign = 'center';
       c.fillStyle = pu.tone === 'accent' ? s.vars.accent : s.vars.fg;
-      c.font = '700 ' + Math.round(cs * 0.82) + 'px "Chakra Petch", system-ui, sans-serif';
+      c.font = '700 ' + fsz(cs * 0.82) + 'px ' + fnt();
       c.shadowColor = 'rgba(0,0,0,.6)'; c.shadowBlur = 6;
       c.fillText(pu.text, COLS * cs / 2, yy);
-      if (pu.sub) { c.font = '500 ' + Math.round(cs * 0.5) + 'px "Chakra Petch", system-ui, sans-serif'; c.fillText(pu.sub, COLS * cs / 2, yy + cs * 0.75); }
+      if (pu.sub) { c.font = '500 ' + fsz(cs * 0.5) + 'px ' + fnt(); c.fillText(pu.sub, COLS * cs / 2, yy + cs * 0.75); }
       c.shadowBlur = 0; c.globalAlpha = 1; c.textAlign = 'start';
     }
     // countdown
     if (S.countdown > 0) {
       var n = Math.ceil(S.countdown / 900);
       c.fillStyle = 'rgba(0,0,0,.45)'; c.fillRect(0, 0, COLS * cs, VIS * cs);
-      c.fillStyle = s.vars.accent; c.textAlign = 'center'; c.font = '700 ' + cs * 4 + 'px "Chakra Petch", system-ui, sans-serif';
+      c.fillStyle = s.vars.accent; c.textAlign = 'center'; c.font = '700 ' + fsz(cs * 4) + 'px ' + fnt();
       c.fillText(n > 0 ? String(Math.min(3, n)) : 'GO', COLS * cs / 2, VIS * cs / 2 + cs * 1.4);
       {
-        c.fillStyle = s.vars.fg; c.font = '500 ' + Math.max(10, Math.round(cs * 0.46)) + 'px "Chakra Petch", system-ui, sans-serif';
+        c.fillStyle = s.vars.fg; c.font = '500 ' + fsz(Math.max(10, cs * 0.46)) + 'px ' + fnt();
         c.fillText('Tap left side: rotate \u21BA', COLS * cs / 2, VIS * cs - cs * 6.4);
         c.fillText('Tap right side: rotate \u21BB', COLS * cs / 2, VIS * cs - cs * 5.4);
         c.fillText('Drag to move \u00B7 Flick down to drop', COLS * cs / 2, VIS * cs - cs * 4.4);
@@ -640,9 +738,9 @@
     cxH.setTransform(dpr, 0, 0, dpr, 0, 0); cxH.clearRect(0, 0, 56, 44);
     cxH.fillStyle = s.vars.well; cxH.fillRect(0, 0, 56, 44);
     if (P.hold >= 0) drawMini(cxH, P.defs[P.hold], 28, 22, 9, pal(P.defs[P.hold].color), P.canHold ? null : 0.35);
-    else { cxH.fillStyle = s.vars.dim; cxH.font = '600 9px "Chakra Petch", system-ui, sans-serif'; cxH.textAlign = 'center'; cxH.fillText('HOLD', 28, 26); cxH.textAlign = 'start'; }
+    else { cxH.fillStyle = s.vars.dim; cxH.font = '600 ' + fsz(9) + 'px ' + fnt(); cxH.textAlign = 'center'; cxH.fillText('HOLD', 28, 26); cxH.textAlign = 'start'; }
     cxN.setTransform(dpr, 0, 0, dpr, 0, 0); cxN.fillStyle = s.vars.well; cxN.fillRect(0, 0, 200, 44);
-    if (S.mode === 'rogue' && S.rg && S.rg.mods.hideQueue) { cxN.fillStyle = s.vars.dim; cxN.font = '600 11px "Chakra Petch", system-ui, sans-serif'; cxN.textAlign = 'center'; cxN.fillText('FOG: NEXT PIECES HIDDEN', 100, 26); cxN.textAlign = 'start'; }
+    if (S.mode === 'rogue' && S.rg && S.rg.mods.hideQueue) { cxN.fillStyle = s.vars.dim; cxN.font = '600 ' + fsz(11) + 'px ' + fnt(); cxN.textAlign = 'center'; cxN.fillText('FOG: NEXT PIECES HIDDEN', 100, 26); cxN.textAlign = 'start'; }
     else for (i = 0; i < 5; i++) { var nd = P.defs[P.queue[i]]; drawMini(cxN, nd, 20 + i * 40, 22, i === 0 ? 9 : 7, pal(nd.color)); }
     // stats
     var m = MODES[S.mode];
@@ -945,7 +1043,7 @@
     if (rw.leftover) rows.push(['Spare pieces', '+' + rw.leftover]);
     if (rw.interest) rows.push(['Interest', '+' + rw.interest]);
     rows.push(['Total coins now', run.coins]);
-    Sfx.play('win'); buzz(60);
+    Sfx.play('win'); buzz(60); if (window.Bg) Bg.event('big');
     rogueOverlay(last ? 'Run complete' : 'Stage clear', rows, last ? 'See your run' : 'Choose a relic', st.boss ? 'Boss defeated' : '');
   }
   function stageFail(reason) {
@@ -962,6 +1060,7 @@
   var last = 0, shakeEl = $('stage');
   function frame(ts) {
     var dt = Math.min(50, ts - last || 16); last = ts;
+    if (window.Bg) { Bg.level(S.screen === 'game' && S.P ? S.P.level : 1); Bg.frame(ts); }
     if (S.screen === 'game' && S.P) {
       if (!S.paused && !S.done) {
         if (S.countdown > 0) {
@@ -1007,6 +1106,7 @@
     switch (t.id) {
       case 'goStats': show('stats'); break;
       case 'goSettings': resetArmed = false; show('settings'); break;
+      case 'cycleTheme': cycleTheme(); break;
       case 'backStats': case 'backSettings': show('menu'); break;
       case 'pauseBtn': togglePause(); break;
       case 'rResume': togglePause(); break;
@@ -1028,8 +1128,9 @@
   $('optVib').addEventListener('change', function () { save.settings.vibrate = this.checked; persist(); buzz(30); });
 
   if (!skinUnlocked(save.settings.skin)) save.settings.skin = 'classic';
+  if (window.Bg) Bg.init($('bg'));
   applySkin(); applyPadSide();
   show('menu');
   requestAnimationFrame(frame);
-  window.TetrApp = { S: S, save: function () { return save; }, start: startGame, Input: Input };
+  window.TetrApp = { setSkin: function (id) { save.settings.skin = id; applySkin(); renderMenu(); }, S: S, save: function () { return save; }, start: startGame, Input: Input };
 })();
