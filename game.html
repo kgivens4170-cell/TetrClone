@@ -62,7 +62,7 @@
   </div>
 </div>
 <p id="hint">MOVE: MOUSE / TOUCH PAD / ← → ↑ ↓ (W S) &nbsp; LAUNCH: CLICK / SPACE<br>
-EVERY LEVEL IS DIFFERENT. STEEL NEVER BREAKS. CATCH GOLD FOR A WIDE PADDLE.</p>
+CLEAR A LEVEL, THEN CHOOSE YOUR PATH. EVERY SCENE IS DIFFERENT.</p>
 
 <script src="brick-palettes.js"></script>
 <script>
@@ -86,177 +86,245 @@ EVERY LEVEL IS DIFFERENT. STEEL NEVER BREAKS. CATCH GOLD FOR A WIDE PADDLE.</p>
   var BALL_R = 3;                       // ball is 6x6 pixels
   var TAU = Math.PI * 2;
   var COMBO_WINDOW = 1.2;               // seconds between breaks to keep a combo
-  var INTRO_T = 1.8, CLEAR_T = 2.0;
+  var INTRO_T = 1.8;
   var PICKUP_CHANCE = 0.12, WIDE_TIME = 8;
+
+  // Path cards shown after each cleared level
+  var CARD_X0 = 4, CARD_Y = 36, CARD_W = 58, CARD_H = 92, CARD_GAP = 5;
 
   // Ball colour climbs through these stops as it bounces.
   var BOUNCE_STOPS = ['#ffffff', '#ffe27a', '#ff9a2a', '#ff3a6d', '#c040ff'];
   var BOUNCE_FULL = 60;                 // bounces to reach the last stop
 
-  // ---------- Brick size and grid ----------
-  // Bricks start at 2x and shrink to 1x from level 4. Whole-number scales keep pixels crisp.
-  function scaleFor(n) { return n <= 3 ? 2 : 1; }
+  // Brick elements by palette index:
+  // 0 fire, 1 water, 2 grass (poison), 3 lightning, 4 ice, 5 air, 6 rock (earth), 7 shadow.
+  // In level strings: '0'-'7' is a normal brick of that element,
+  // 'a'-'h' is a hard brick (two hits) of element 0-7, 'S' is steel (indestructible).
 
-  // Elements unlock in this order: level 1 has the first two, and every
-  // two levels adds another, until all eight are in play.
-  var UNLOCK_ORDER = [0, 1, 6, 4, 2, 3, 5, 7];   // Fire, Water, Earth, Ice, Poison, Lightning, Air, Shadow
-  function activeFor(n) {
-    var k = Math.min(UNLOCK_ORDER.length, 2 + Math.floor((n - 1) / 2));
-    return UNLOCK_ORDER.slice(0, k);
+  // ---------- Grid helpers ----------
+  function blank(C, R) {
+    var g = [];
+    for (var r = 0; r < R; r++) {
+      var row = [];
+      for (var c = 0; c < C; c++) row.push('.');
+      g.push(row);
+    }
+    return g;
   }
+
+  function put(g, r, c, ch) {
+    if (r >= 0 && r < g.length && c >= 0 && c < g[0].length) g[r][c] = ch;
+  }
+
+  function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+  // Pick one of the given characters at random
+  function pick(list) { return list[Math.floor(Math.random() * list.length)]; }
+
+  // ---------- Scenes (procedural biomes) ----------
+  // Each scene paints a grid of element characters in its own shape.
+  // key: the three elements the scene is built from, used for its path card.
+  var BIOMES = [
+    { name: 'WATERFALL', key: ['1', '6', '2'], gen: function (C, R) {
+        // Water pours down the middle, rock cliffs and grass on the sides, a pool at the bottom
+        var g = blank(C, R), cx = (C - 1) / 2;
+        var half = C > 7 ? 1 + Math.floor(Math.random() * 2) : Math.floor(Math.random() * 2);
+        for (var r = 0; r < R; r++) for (var c = 0; c < C; c++) {
+          var d = Math.abs(c - cx);
+          if (d <= half) put(g, r, c, '1');
+          else if (d <= half + 1) put(g, r, c, r < 2 ? '2' : (Math.random() < 0.8 ? 'S' : '6'));
+          else put(g, r, c, r === 0 ? '2' : (Math.random() < 0.55 ? '6' : '.'));
+        }
+        for (var c2 = 0; c2 < C; c2++) if (Math.random() < 0.8) put(g, R - 1, c2, '1');
+        return g;
+    } },
+    { name: 'VOLCANO', key: ['0', '6', '7'], gen: function (C, R) {
+        // Lava cone rising from the base, rock ridges around it, smoke at the top
+        var g = blank(C, R), cx = (C - 1) / 2;
+        for (var r = 0; r < R; r++) for (var c = 0; c < C; c++) {
+          var d = Math.abs(c - cx);
+          if (d <= r * 0.5 + 0.4) put(g, r, c, '0');
+          else if (d <= r * 0.5 + 1.6) put(g, r, c, Math.random() < 0.6 ? 'S' : '6');
+          else if (r === 0 && Math.random() < 0.5) put(g, r, c, '7');
+          else if (Math.random() < 0.25) put(g, r, c, '6');
+        }
+        for (var c2 = 0; c2 < C; c2++) put(g, R - 1, c2, '6');
+        return g;
+    } },
+    { name: 'FOREST', key: ['2', '6', '2'], gen: function (C, R) {
+        // Leafy canopy above, trunks and ground below
+        var g = blank(C, R);
+        for (var r = 0; r < R - 1; r++) for (var c = 0; c < C; c++) {
+          if (Math.random() < 0.5 + 0.1 * (r % 2)) put(g, r, c, '2');
+        }
+        for (var c2 = 0; c2 < C; c2++) {
+          if (c2 % 3 === 1) put(g, R - 2, c2, '6');
+          put(g, R - 1, c2, Math.random() < 0.7 ? '2' : '6');
+        }
+        return g;
+    } },
+    { name: 'MOUNTAINS', key: ['4', '6', 'S'], gen: function (C, R) {
+        // Rolling peaks of rock with ice caps
+        var g = blank(C, R), f = 0.5 + Math.random() * 0.8, ph = Math.random() * TAU;
+        for (var c = 0; c < C; c++) {
+          var h = Math.floor((R - 1) * (0.35 + 0.65 * Math.abs(Math.sin(c * f + ph))));
+          for (var r = h; r < R; r++) put(g, r, c, r === h ? '4' : (Math.random() < 0.15 ? 'S' : '6'));
+        }
+        return g;
+    } },
+    { name: 'STORM', key: ['5', '3', '1'], gen: function (C, R) {
+        // Cloud band, a lightning bolt down the middle, rain pool at the bottom
+        var g = blank(C, R), bolt = Math.floor(Math.random() * C);
+        for (var c = 0; c < C; c++) for (var r = 0; r < Math.min(2, R); r++) {
+          if (Math.random() < 0.7) put(g, r, c, '5');
+        }
+        for (var r2 = 2; r2 < R - 1; r2++) put(g, r2, clamp(bolt + (r2 % 2 ? 1 : 0), 0, C - 1), '3');
+        for (var c2 = 0; c2 < C; c2++) if (Math.random() < 0.6) put(g, R - 1, c2, '1');
+        return g;
+    } },
+    { name: 'CRYSTAL', key: ['4', '7', 'S'], gen: function (C, R) {
+        // Steel walls framing an ice and shadow cavern
+        var g = blank(C, R);
+        for (var r = 0; r < R; r++) for (var c = 0; c < C; c++) {
+          if (c === 0 || c === C - 1) put(g, r, c, 'S');
+          else if (Math.random() < 0.55) put(g, r, c, '4');
+          else if (Math.random() < 0.2) put(g, r, c, '7');
+        }
+        return g;
+    } },
+    { name: 'SKY ISLANDS', key: ['5', '6', '2'], gen: function (C, R) {
+        // Floating rock islands with grass on top, drifting air between them
+        var g = blank(C, R);
+        for (var r = 0; r < R; r++) for (var c = 0; c < C; c++) if (Math.random() < 0.2) put(g, r, c, '5');
+        var islands = 2 + Math.floor(Math.random() * 2);
+        for (var i = 0; i < islands; i++) {
+          var ir = 1 + Math.floor(Math.random() * Math.max(1, R - 1));
+          var ic = Math.floor(Math.random() * C);
+          var hw = 1 + Math.floor(Math.random() * 2);
+          for (var dc = -hw; dc <= hw; dc++) {
+            put(g, ir, ic + dc, '6');
+            if (Math.random() < 0.6) put(g, ir - 1, ic + dc, '2');
+          }
+        }
+        return g;
+    } },
+    { name: 'SWAMP', key: ['2', '1', '6'], gen: function (C, R) {
+        // Patches of grass and water with root-like rock
+        var g = blank(C, R);
+        for (var r = 0; r < R; r++) for (var c = 0; c < C; c++) {
+          var x = Math.random();
+          if (x < 0.4) put(g, r, c, '2');
+          else if (x < 0.6) put(g, r, c, '1');
+          else if (x < 0.7) put(g, r, c, '6');
+        }
+        return g;
+    } },
+    { name: 'DESERT', key: ['0', '6', '0'], gen: function (C, R) {
+        // A sun of fire over rolling rock dunes
+        var g = blank(C, R), cx = (C - 1) / 2, rad = Math.max(1.5, C / 3), f = 0.5 + Math.random();
+        for (var r = 0; r < R; r++) for (var c = 0; c < C; c++) {
+          var d = Math.sqrt(Math.pow(c - cx, 2) + Math.pow((r - 0) * 2, 2));
+          if (d <= rad && Math.random() < 0.6) put(g, r, c, '0');
+        }
+        for (var c2 = 0; c2 < C; c2++) {
+          var h = R - 2 + Math.round(Math.sin(c2 * f) * 0.8);
+          for (var r2 = Math.max(0, h); r2 < R; r2++) put(g, r2, c2, '6');
+        }
+        return g;
+    } },
+    { name: 'ARCANE', key: ['7', '4', '7'], gen: function (C, R) {
+        // Concentric shadow and ice rings around the centre
+        var g = blank(C, R), cx = (C - 1) / 2, cy = (R - 1) / 2;
+        for (var r = 0; r < R; r++) for (var c = 0; c < C; c++) {
+          var d = Math.sqrt(Math.pow((c - cx) / 1.5, 2) + Math.pow(r - cy, 2));
+          var ring = Math.floor(d) % 3;
+          if (ring === 0) put(g, r, c, '7');
+          else if (ring === 1 && Math.random() < 0.8) put(g, r, c, '4');
+        }
+        return g;
+    } },
+    { name: 'BAMBOO', key: ['2', '1', '2'], gen: function (C, R) {
+        // Tall grass stalks with water between them
+        var g = blank(C, R);
+        for (var c = 0; c < C; c++) for (var r = 0; r < R; r++) {
+          if (c % 2 === 0) { if (Math.random() < 0.85) put(g, r, c, '2'); }
+          else if (Math.random() < 0.12) put(g, r, c, '1');
+        }
+        return g;
+    } },
+    { name: 'RIVER', key: ['1', 'S', '2'], gen: function (C, R) {
+        // A winding river with steel banks and grassy shores
+        var g = blank(C, R), slope = (Math.random() - 0.5) * 1.2;
+        var c0 = (C - 1) / 2 + (Math.random() - 0.5) * 2;
+        for (var r = 0; r < R; r++) for (var c = 0; c < C; c++) {
+          var centre = c0 + slope * (r - (R - 1) / 2);
+          var d = Math.abs(c - centre);
+          if (d <= 0.9) put(g, r, c, '1');
+          else if (d <= 1.9) put(g, r, c, 'S');
+          else if (d <= 3) { if (Math.random() < 0.8) put(g, r, c, '2'); }
+          else if (Math.random() < 0.3) put(g, r, c, '6');
+        }
+        return g;
+    } },
+    { name: 'METEOR', key: ['0', '6', 'S'], gen: function (C, R) {
+        // Scattered rock and steel debris with a fiery streak
+        var g = blank(C, R), c0 = Math.floor(Math.random() * C);
+        for (var r = 0; r < R; r++) for (var c = 0; c < C; c++) {
+          if (Math.random() < 0.35) put(g, r, c, pick(['0', '6', 'S']));
+        }
+        for (var k = 0; k < R; k++) put(g, k, (c0 + k) % C, '0');
+        return g;
+    } }
+  ];
+
+  function breakableCount(g) {
+    var n = 0;
+    for (var r = 0; r < g.length; r++) for (var c = 0; c < g[r].length; c++) {
+      if (g[r][c] !== '.' && g[r][c] !== 'S') n++;
+    }
+    return n;
+  }
+
+  function scaleFor(n) { return n <= 3 ? 2 : 1; }
   function cellWFor(s) { return BW * s + GAP_X; }
   function cellHFor(s) { return BH * s + GAP_Y; }
   function colsFor(s) { return Math.floor((LW + GAP_X) / cellWFor(s)); }
   function maxRowsFor(s) { return Math.floor((BRICK_BOTTOM - BRICK_Y0 + GAP_Y) / cellHFor(s)); }
 
-  // ---------- Procedural level generation ----------
-  // A grid is an array of rows, each a boolean array of columns. true = brick here.
-  function makeGrid(C, R, fn) {
-    var out = [];
-    for (var r = 0; r < R; r++) {
-      var row = [];
-      for (var c = 0; c < C; c++) row.push(!!fn(r, c));
-      out.push(row);
-    }
-    return out;
-  }
-
-  // Random values, optionally mirrored left to right so the level is symmetric.
-  function noiseGrid(C, R, mirror) {
-    var out = [];
-    for (var r = 0; r < R; r++) {
-      var row = [];
-      for (var c = 0; c < C; c++) row.push(Math.random());
-      if (mirror) for (var c2 = 0; c2 < C; c2++) if (c2 > (C - 1) / 2) row[c2] = row[C - 1 - c2];
-      out.push(row);
-    }
-    return out;
-  }
-
-  var FAMILIES = [
-    { name: 'SCATTER', make: function (C, R) {
-        var d = 0.55 + Math.random() * 0.25, rnd = noiseGrid(C, R, true);
-        return makeGrid(C, R, function (r, c) { return rnd[r][c] < d; });
-    } },
-    { name: 'CHECKER', make: function (C, R) {
-        return makeGrid(C, R, function (r, c) {
-          return (r + c) % 2 === 0 ? Math.random() < 0.95 : Math.random() < 0.25;
-        });
-    } },
-    { name: 'DIAMOND', make: function (C, R) {
-        var cx = (C - 1) / 2, cy = (R - 1) / 2, s = 0.9 + Math.random() * 0.2;
-        return makeGrid(C, R, function (r, c) {
-          return Math.abs(c - cx) / (C / 2 + 0.5) + Math.abs(r - cy) / (R / 2 + 0.5) <= s;
-        });
-    } },
-    { name: 'RING', make: function (C, R) {
-        var cx = (C - 1) / 2, cy = (R - 1) / 2;
-        var inner = 0.35 + Math.random() * 0.25, outer = 0.9 + Math.random() * 0.2;
-        return makeGrid(C, R, function (r, c) {
-          var d = Math.sqrt(Math.pow((c - cx) / (C / 2), 2) + Math.pow((r - cy) / (R / 2), 2));
-          return d > inner && d <= outer;
-        });
-    } },
-    { name: 'WAVE', make: function (C, R) {
-        var f = 0.6 + Math.random() * 0.8, ph = Math.random() * TAU, mid = (R - 1) / 2;
-        return makeGrid(C, R, function (r, c) {
-          var w = mid + Math.sin(c * f + ph) * (R / 3);
-          return Math.abs(r - w) < 0.9 || (Math.abs(r - (w + 2.2)) < 0.6 && Math.random() > 0.4);
-        });
-    } },
-    { name: 'PYRAMID', make: function (C, R) {
-        var cx = (C - 1) / 2, k = (C / 2) / R * 1.1;
-        return makeGrid(C, R, function (r, c) { return Math.abs(c - cx) <= (r + 0.6) * k; });
-    } },
-    { name: 'STRIPES', make: function (C, R) {
-        var par = Math.random() < 0.5 ? 0 : 1;
-        return makeGrid(C, R, function (r, c) {
-          return (r % 2 === par) ? Math.random() < 0.92 : Math.random() < 0.1;
-        });
-    } },
-    { name: 'GATE', make: function (C, R) {
-        var cx = (C - 1) / 2, gap = Math.random() < 0.5 ? 0.5 : 1.0;
-        return makeGrid(C, R, function (r, c) {
-          if (Math.abs(c - cx) <= gap) return r === R - 1 && Math.random() < 0.5;
-          return Math.random() < 0.85;
-        });
-    } },
-    { name: 'COLUMNS', make: function (C, R) {
-        return makeGrid(C, R, function (r, c) {
-          return c % 2 === 0 ? Math.random() < 0.9 : Math.random() < 0.2;
-        });
-    } },
-    { name: 'CAVERN', make: function (C, R) {
-        // Random fill, then smoothing passes make organic caves
-        var g = makeGrid(C, R, function () { return Math.random() < 0.6; });
-        for (var it = 0; it < 3; it++) {
-          var ng = [];
-          for (var r = 0; r < R; r++) {
-            var row = [];
-            for (var c = 0; c < C; c++) {
-              var n = 0;
-              for (var dr = -1; dr <= 1; dr++) for (var dc = -1; dc <= 1; dc++) {
-                if (dr === 0 && dc === 0) continue;
-                var rr = r + dr, cc = c + dc;
-                if (rr >= 0 && rr < R && cc >= 0 && cc < C && g[rr][cc]) n++;
-              }
-              row.push(n >= 5);
-            }
-            ng.push(row);
-          }
-          g = ng;
-        }
-        return g;
-    } },
-    { name: 'INVADERS', make: function (C, R) {
-        var rnd = noiseGrid(C, R, true);
-        return makeGrid(C, R, function (r, c) {
-          return (r % 2 === 0) ? rnd[r][c] < 0.7 : rnd[r][c] < 0.35;
-        });
-    } },
-    { name: 'CROSS', make: function (C, R) {
-        var cx = (C - 1) / 2, cy = (R - 1) / 2;
-        return makeGrid(C, R, function (r, c) {
-          return (Math.abs(c - cx) <= 0.8 || Math.abs(r - cy) <= 0.8) ? Math.random() < 0.95 : false;
-        });
-    } }
-  ];
-
-  function countFilled(grid) {
-    var n = 0;
-    for (var r = 0; r < grid.length; r++) for (var c = 0; c < grid[r].length; c++) if (grid[r][c]) n++;
-    return n;
-  }
-
-  // Build a level for level n at brick scale s. Difficulty rises with n:
-  // more rows, more hard bricks, and steel shows up from level 2.
-  function generateLevel(n, s, active) {
+  // Build the grid for a scene at level n, then make some bricks hard as the run goes on
+  function generateLevel(n, s, biome) {
     var C = colsFor(s), maxR = maxRowsFor(s);
-    var R = Math.min(maxR, 2 + Math.floor((n + 1) / 2));
-    var fam, grid, tries = 0;
+    var R = Math.min(maxR, 3 + Math.floor(n / 3));
+    var g, tries = 0;
     do {
-      fam = FAMILIES[Math.floor(Math.random() * FAMILIES.length)];
-      grid = fam.make(C, R);
+      g = biome.gen(C, R);
       tries++;
-    } while (countFilled(grid) < Math.max(6, C * R * 0.4) && tries < 20);
+    } while (breakableCount(g) < 6 && tries < 10);
 
-    // Brick types unlock too: hard from level 2, steel from level 4
-    var pSteel = n >= 4 ? Math.min(0.14, 0.02 * (n - 3)) : 0;
-    var pHard = n >= 2 ? Math.min(0.5, 0.06 + 0.03 * n) : 0;
+    var pHard = n >= 2 ? Math.min(0.45, 0.05 + 0.03 * n) : 0;
     var rows = [];
     for (var r = 0; r < R; r++) {
       var str = '';
       for (var c = 0; c < C; c++) {
-        if (!grid[r][c]) { str += '.'; continue; }
-        var u = Math.random();
-        if (u < pSteel) str += 'S';
-        else if (u < pSteel + pHard) str += 'H';
-        else str += String(active[(r + (Math.random() < 0.25 ? 1 : 0)) % active.length]);
+        var ch = g[r][c];
+        if (ch === '.' || ch === 'S') str += ch;
+        else if (Math.random() < pHard) str += String.fromCharCode(97 + parseInt(ch, 10));
+        else str += ch;
       }
       rows.push(str);
     }
-    return { name: fam.name, cols: C, rows: rows };
+    return { name: biome.name, cols: C, rows: rows };
   }
+
+  // ---------- Roguelite boons: picked on the path cards ----------
+  var BOONS = [
+    { name: 'SWIFT', lines: ['BALL', '+12% SPEED'], apply: function (run) { run.speedMul *= 1.12; } },
+    { name: 'HEAVY', lines: ['SCORE', 'x1.5 POINTS'], apply: function (run) { run.scoreMul *= 1.5; } },
+    { name: 'SHIELD', lines: ['ONE FREE', 'FLOOR SAVE'], apply: function (run) { run.shields += 1; } },
+    { name: 'GOLDEN', lines: ['MORE', 'GOLD DROPS'], apply: function (run) { run.dropBonus += 0.15; } },
+    { name: 'VITALITY', lines: ['+1 LIFE', ''], apply: function (run) { run.lifeBonus += 1; } },
+    { name: 'WIDE', lines: ['WIDE', 'PADDLE'], apply: function (run) { run.wideStart = true; } }
+  ];
 
   // ---------- Audio: synthesised with Web Audio, no sound files ----------
   var AC = null, MASTER = null;
@@ -445,6 +513,16 @@ EVERY LEVEL IS DIFFERENT. STEEL NEVER BREAKS. CATCH GOLD FOR A WIDE PADDLE.</p>
     tone(1046, 0.18, 'square', 0.12, null, 0.16);
   }
 
+  function sfxPick() {
+    tone(660, 0.08, 'triangle', 0.2);
+    tone(990, 0.12, 'triangle', 0.2, null, 0.07);
+  }
+
+  function sfxShield() {
+    tone(180, 0.3, 'sine', 0.3, 420);
+    noise(0.15, 0.2, 'bandpass', 1500, 800, 1);
+  }
+
   // ---------- Game state ----------
   var cv = document.getElementById('c');
   var g = cv.getContext('2d');
@@ -452,7 +530,8 @@ EVERY LEVEL IS DIFFERENT. STEEL NEVER BREAKS. CATCH GOLD FOR A WIDE PADDLE.</p>
 
   var state, bricks, ball, paddle, lives, score, time, particles, keys, pointerX;
   var trail, flash, paddleFlash, recoil, shake, combo, lastBreak, comboColor;
-  var level, stateT, curSpeed, pickups, paddleDY, levelName, levelTheme, padDX, padDY;
+  var level, stateT, curSpeed, pickups, paddleDY, levelName, padDX, padDY;
+  var run, pendingBiome, choices, boonNote, shieldFlash;
 
   function hexToRgb(h) {
     return [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
@@ -479,17 +558,15 @@ EVERY LEVEL IS DIFFERENT. STEEL NEVER BREAKS. CATCH GOLD FOR A WIDE PADDLE.</p>
     ball.vx = 0; ball.vy = 0;
   }
 
-  // Generate and lay out level n. Every brick knows its own scale, width and height.
+  // Lay out level n using the chosen scene.
   function loadLevel(n) {
     var s = scaleFor(n);
-    var active = activeFor(n);
-    var lv = generateLevel(n, s, active);
+    var biome = pendingBiome || BIOMES[Math.floor(Math.random() * BIOMES.length)];
+    pendingBiome = null;
+    var lv = generateLevel(n, s, biome);
     var cellW = cellWFor(s), cellH = cellHFor(s);
     var x0 = Math.floor((LW - (lv.cols * cellW - GAP_X)) / 2);
     levelName = lv.name;
-    levelTheme = active.length > 4
-      ? active.length + ' ELEMENTS'
-      : active.map(function (i) { return PAL[i].element.toUpperCase(); }).join(' + ');
     bricks = [];
     for (var r = 0; r < lv.rows.length; r++) {
       var row = lv.rows[r];
@@ -502,27 +579,28 @@ EVERY LEVEL IS DIFFERENT. STEEL NEVER BREAKS. CATCH GOLD FOR A WIDE PADDLE.</p>
           s: s, w: BW * s, h: BH * s,
           alive: true, type: 'n', hp: 1, maxHp: 1, flash: 0,
           seed: r * 17 + c + n * 97,
-          pal: PAL[(r + c) % PAL.length]
+          pal: null
         };
         if (ch === 'S') {
           k.type = 's';
-        } else if (ch === 'H') {
+          k.pal = PAL[6];
+        } else if (ch >= 'a' && ch <= 'h') {
           k.type = 'h'; k.hp = 2; k.maxHp = 2;
-          k.pal = PAL[active[(r * 3 + c) % active.length]];
+          k.pal = PAL[ch.charCodeAt(0) - 97];
         } else {
-          k.pal = PAL[parseInt(ch, 10) % PAL.length];
+          k.pal = PAL[parseInt(ch, 10)];
         }
         bricks.push(k);
       }
     }
-    // Each level is a little faster than the one before, capped at 1.8x
-    curSpeed = Math.min(BASE_SPEED * (1 + 0.06 * (n - 1)), BASE_SPEED * 1.8);
+    // Each level is a little faster than the one before, capped at 1.8x, plus run boons
+    curSpeed = Math.min(BASE_SPEED * (1 + 0.06 * (n - 1)), BASE_SPEED * 1.8) * run.speedMul;
   }
 
   function setPaddleWidth(w) {
     var centre = paddle.x + paddle.w / 2;
     paddle.w = w;
-    paddle.x = Math.max(0, Math.min(LW - w, centre - w / 2));
+    paddle.x = clamp(centre - w / 2, 0, LW - w);
   }
 
   function reset(full) {
@@ -537,10 +615,15 @@ EVERY LEVEL IS DIFFERENT. STEEL NEVER BREAKS. CATCH GOLD FOR A WIDE PADDLE.</p>
     shake = 0;
     combo = 0;
     lastBreak = -10;
+    shieldFlash = 0;
     if (full) {
       level = 1;
       lives = 3;
       score = 0;
+      run = { speedMul: 1, scoreMul: 1, shields: 0, dropBonus: 0, lifeBonus: 0, wideStart: false, names: [] };
+      pendingBiome = null;
+      choices = [];
+      boonNote = '';
       loadLevel(1);
       state = 'intro';
       stateT = INTRO_T;
@@ -562,6 +645,45 @@ EVERY LEVEL IS DIFFERENT. STEEL NEVER BREAKS. CATCH GOLD FOR A WIDE PADDLE.</p>
 
   function bounce() {
     ball.bounces++;
+  }
+
+  // ---------- Path choice ----------
+  // Three random scenes, each with a random boon. Pick one to continue the run.
+  function makeChoices() {
+    var bs = BIOMES.slice(), bo = BOONS.slice(), out = [];
+    for (var i = 0; i < 3; i++) {
+      var bi = Math.floor(Math.random() * bs.length);
+      var oi = Math.floor(Math.random() * bo.length);
+      out.push({ biome: bs.splice(bi, 1)[0], boon: bo.splice(oi, 1)[0] });
+    }
+    choices = out;
+  }
+
+  function cardAt(x, y) {
+    for (var i = 0; i < 3; i++) {
+      var cx = CARD_X0 + i * (CARD_W + CARD_GAP);
+      if (x >= cx && x < cx + CARD_W && y >= CARD_Y && y < CARD_Y + CARD_H) return i;
+    }
+    return -1;
+  }
+
+  function pickPath(i) {
+    var c = choices[i];
+    if (!c) return;
+    sfxPick();
+    c.boon.apply(run);
+    run.names.push(c.boon.name);
+    pendingBiome = c.biome;
+    level++;
+    loadLevel(level);
+    ball = newBall();
+    pickups = [];
+    if (run.wideStart) { setPaddleWidth(PADDLE_WIDE); paddle.wideT = 9999; }
+    lives = Math.min(6, lives + run.lifeBonus);
+    run.lifeBonus = 0;
+    state = 'intro';
+    stateT = INTRO_T;
+    sfxIntro();
   }
 
   // ---------- Particles ----------
@@ -825,14 +947,14 @@ EVERY LEVEL IS DIFFERENT. STEEL NEVER BREAKS. CATCH GOLD FOR A WIDE PADDLE.</p>
     combo = (now - lastBreak < COMBO_WINDOW) ? combo + 1 : 1;
     lastBreak = now;
     comboColor = k.pal.tones[4];
-    score += 10 * combo;
+    score += Math.round(10 * combo * run.scoreMul);
 
     shatter(k, ball.x, ball.y);
     var ladder = Math.pow(2, Math.min(combo - 1, 12) / 6);   // up a semitone per 2 combo hits
     sfxBreak(k.pal.fx, k.x + k.w / 2, pitchMul() * ladder);
     if (combo >= 3) tone(1568 * ladder, 0.15, 'sine', 0.12, null, 0.05);
     shake = Math.min(1, shake + 0.35);
-    if (Math.random() < PICKUP_CHANCE) spawnPickup(k.x + k.w / 2 - 3, k.y + k.h / 2 - 2);
+    if (Math.random() < PICKUP_CHANCE + run.dropBonus) spawnPickup(k.x + k.w / 2 - 3, k.y + k.h / 2 - 2);
   }
 
   // ---------- Main update ----------
@@ -853,27 +975,28 @@ EVERY LEVEL IS DIFFERENT. STEEL NEVER BREAKS. CATCH GOLD FOR A WIDE PADDLE.</p>
     paddleFlash = Math.max(0, paddleFlash - dt);
     recoil = Math.max(0, recoil - dt);
     shake = Math.max(0, shake - dt * 3);
+    shieldFlash = Math.max(0, shieldFlash - dt);
     for (var b = 0; b < bricks.length; b++) bricks[b].flash = Math.max(0, bricks[b].flash - dt);
 
-    // Paddle from keyboard and pointer: left/right and up/down
+    // Paddle from keyboard, pointer and touch pad: left/right and up/down
     var dir = (keys.ArrowLeft ? -1 : 0) + (keys.ArrowRight ? 1 : 0);
     if (dir !== 0) paddle.x += dir * 140 * dt;
     if (pointerX !== null) paddle.x = pointerX - paddle.w / 2;
     paddle.x += padDX;                    // touch pad drag, in logical pixels
     padDX = 0;
-    paddle.x = Math.max(0, Math.min(LW - paddle.w, paddle.x));
+    paddle.x = clamp(paddle.x, 0, LW - paddle.w);
 
     var vdir = (keys.ArrowUp || keys.w || keys.W ? -1 : 0) + (keys.ArrowDown || keys.s || keys.S ? 1 : 0);
     if (vdir !== 0) paddle.y += vdir * 90 * dt;
     paddle.y += paddleDY + padDY;         // pointer and touch pad movement, in logical pixels
     paddleDY = 0;
     padDY = 0;
-    paddle.y = Math.max(PADDLE_TOP_Y, Math.min(PADDLE_BASE_Y, paddle.y));
+    paddle.y = clamp(paddle.y, PADDLE_TOP_Y, PADDLE_BASE_Y);
 
-    // Wide paddle timer
-    if (paddle.wideT > 0) {
+    // Wide paddle timer (boon-wide paddles last all level)
+    if (paddle.wideT > 0 && paddle.wideT < 9000) {
       paddle.wideT -= dt;
-      if (paddle.wideT <= 0) setPaddleWidth(PADDLE_W);
+      if (paddle.wideT <= 0) setPaddleWidth(run.wideStart ? PADDLE_WIDE : PADDLE_W);
     }
 
     updateParticles(dt);
@@ -885,18 +1008,8 @@ EVERY LEVEL IS DIFFERENT. STEEL NEVER BREAKS. CATCH GOLD FOR A WIDE PADDLE.</p>
       if (stateT <= 0) state = 'ready';
       return;
     }
-    if (state === 'clear') {
+    if (state === 'choose') {
       attachBall();
-      stateT -= dt;
-      if (stateT <= 0) {
-        level++;
-        loadLevel(level);
-        ball = newBall();
-        pickups = [];
-        state = 'intro';
-        stateT = INTRO_T;
-        sfxIntro();
-      }
       return;
     }
     if (state === 'ready') {
@@ -936,7 +1049,7 @@ EVERY LEVEL IS DIFFERENT. STEEL NEVER BREAKS. CATCH GOLD FOR A WIDE PADDLE.</p>
         (py + r <= paddle.y + 1 || ball.y + r <= paddle.y + PADDLE_H + 3) &&
         ball.x >= paddle.x - r && ball.x <= paddle.x + paddle.w + r) {
       var hit = (ball.x - (paddle.x + paddle.w / 2)) / (paddle.w / 2);
-      hit = Math.max(-1, Math.min(1, hit));
+      hit = clamp(hit, -1, 1);
       var ang = hit * 1.0;                              // up to ~57 degrees
       var speed = Math.hypot(ball.vx, ball.vy);
       ball.vx = Math.sin(ang) * speed;
@@ -949,8 +1062,8 @@ EVERY LEVEL IS DIFFERENT. STEEL NEVER BREAKS. CATCH GOLD FOR A WIDE PADDLE.</p>
     for (var b = 0; b < bricks.length; b++) {
       var k = bricks[b];
       if (!k.alive) continue;
-      var cx = Math.max(k.x, Math.min(ball.x, k.x + k.w));
-      var cy = Math.max(k.y, Math.min(ball.y, k.y + k.h));
+      var cx = clamp(ball.x, k.x, k.x + k.w);
+      var cy = clamp(ball.y, k.y, k.y + k.h);
       var dx = ball.x - cx, dy = ball.y - cy;
       if (dx * dx + dy * dy > r * r) continue;
       brickHit(k, px, py);
@@ -958,16 +1071,24 @@ EVERY LEVEL IS DIFFERENT. STEEL NEVER BREAKS. CATCH GOLD FOR A WIDE PADDLE.</p>
     }
 
     if (levelCleared()) {
-      state = 'clear';
-      stateT = CLEAR_T;
-      score += 100 * level;
+      state = 'choose';
+      score += Math.round(100 * level * run.scoreMul);
       lives = Math.min(5, lives + 1);
+      makeChoices();
       sfxClear();
       return;
     }
 
-    // Floor: lose a life
+    // Floor: a shield saves the ball once, otherwise lose a life
     if (ball.y - r > LH) {
+      if (run.shields > 0) {
+        run.shields--;
+        ball.y = LH - r - 2;
+        ball.vy = -Math.abs(ball.vy);
+        shieldFlash = 0.35;
+        sfxShield();
+        return;
+      }
       lives--;
       sfxLoss();
       if (lives <= 0) { state = 'over'; sfxOver(); return; }
@@ -1010,6 +1131,40 @@ EVERY LEVEL IS DIFFERENT. STEEL NEVER BREAKS. CATCH GOLD FOR A WIDE PADDLE.</p>
     g.globalAlpha = 1;
   }
 
+  // Palette for a scene key character: '0'-'7' are elements, 'S' is steel (rock colours)
+  function keyPal(ch) {
+    return ch === 'S' ? PAL[6] : PAL[parseInt(ch, 10)];
+  }
+
+  function drawCard(i, c) {
+    var x = CARD_X0 + i * (CARD_W + CARD_GAP), y = CARD_Y, W = CARD_W, H = CARD_H;
+    var accent = keyPal(c.biome.key[0]).tones[3];
+    g.fillStyle = '#13131f';
+    g.fillRect(x, y, W, H);
+    g.fillStyle = accent;                                      // border
+    g.fillRect(x, y, W, 1); g.fillRect(x, y + H - 1, W, 1);
+    g.fillRect(x, y, 1, H); g.fillRect(x + W - 1, y, 1, H);
+    g.textBaseline = 'top';
+    g.textAlign = 'center';
+    g.font = '8px monospace';
+    g.fillStyle = '#ebebf5';
+    g.fillText(c.biome.name, x + W / 2, y + 4);
+    for (var j = 0; j < 3; j++) {                              // element swatches for the scene
+      var t = keyPal(c.biome.key[j]).tones;
+      g.fillStyle = t[2]; g.fillRect(x + 8 + j * 14, y + 16, 10, 6);
+      g.fillStyle = t[4]; g.fillRect(x + 8 + j * 14, y + 21, 10, 1);
+    }
+    g.fillStyle = '#26263d'; g.fillRect(x + 4, y + 26, W - 8, 1);
+    g.fillStyle = '#ffe27a';
+    g.fillText(c.boon.name, x + W / 2, y + 32);
+    g.fillStyle = '#8c8ca8';
+    g.fillText(c.boon.lines[0], x + W / 2, y + 46);
+    if (c.boon.lines[1]) g.fillText(c.boon.lines[1], x + W / 2, y + 56);
+    g.fillStyle = accent;
+    g.fillText('[' + (i + 1) + ']', x + W / 2, y + H - 12);
+    g.textAlign = 'left';
+  }
+
   function draw() {
     var ox = 0, oy = 0;
     if (shake > 0) {
@@ -1040,6 +1195,14 @@ EVERY LEVEL IS DIFFERENT. STEEL NEVER BREAKS. CATCH GOLD FOR A WIDE PADDLE.</p>
     drawParticles();
 
     var col = ballColor(ball.bounces);
+
+    // Shield line along the bottom while a floor save is held
+    if (run.shields > 0) {
+      g.globalAlpha = 0.25 + 0.15 * Math.sin(time * 4) + (shieldFlash > 0 ? 0.4 : 0);
+      g.fillStyle = col;
+      g.fillRect(0, LH - 1, LW, 1);
+      g.globalAlpha = 1;
+    }
 
     // Wall edge flashes in the ball's colour
     g.fillStyle = col;
@@ -1076,7 +1239,7 @@ EVERY LEVEL IS DIFFERENT. STEEL NEVER BREAKS. CATCH GOLD FOR A WIDE PADDLE.</p>
     }
     g.globalAlpha = 1;
 
-    // Ball: 4x4 pixel blob, corners cut, colour from bounce count, with a highlight
+    // Ball: 6x6 pixel blob, corners cut, colour from bounce count, with a highlight
     var bx = Math.round(ball.x - 3), by = Math.round(ball.y - 3);
     g.fillStyle = col;
     g.fillRect(bx + 1, by, 4, 6);
@@ -1113,13 +1276,15 @@ EVERY LEVEL IS DIFFERENT. STEEL NEVER BREAKS. CATCH GOLD FOR A WIDE PADDLE.</p>
       g.fillStyle = col;
       g.fillText(levelName, LW / 2, 124);
       g.fillStyle = '#8c8ca8';
-      g.fillText(levelTheme, LW / 2, 136);
+      g.fillText(run.names.length ? run.names.join(' ') : 'NO BOONS YET', LW / 2, 136);
     }
     if (state === 'ready') g.fillText('CLICK / SPACE', LW / 2, 112);
-    if (state === 'clear') {
-      g.fillText('LEVEL CLEAR', LW / 2, 112);
+    if (state === 'choose') {
+      g.fillStyle = '#07070d';                       // clear the field behind the cards
+      g.fillRect(0, 24, LW, 110);
       g.fillStyle = '#ffe27a';
-      g.fillText('+' + (100 * level) + ' BONUS', LW / 2, 124);
+      g.fillText('CLEARED  +' + Math.round(100 * level * run.scoreMul), LW / 2, 22);
+      for (var ci = 0; ci < choices.length; ci++) drawCard(ci, choices[ci]);
     }
     if (state === 'over') {
       g.fillText('GAME OVER', LW / 2, 112);
@@ -1136,6 +1301,10 @@ EVERY LEVEL IS DIFFERENT. STEEL NEVER BREAKS. CATCH GOLD FOR A WIDE PADDLE.</p>
   window.addEventListener('keydown', function (e) {
     if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].indexOf(e.key) !== -1) { keys[e.key] = true; e.preventDefault(); }
     if (e.key === 'w' || e.key === 'W' || e.key === 's' || e.key === 'S') keys[e.key] = true;
+    if (state === 'choose' && (e.key === '1' || e.key === '2' || e.key === '3')) {
+      pickPath(parseInt(e.key, 10) - 1);
+      return;
+    }
     if (e.code === 'Space') {
       e.preventDefault();
       if (state === 'over') reset(true); else launch();
@@ -1168,6 +1337,11 @@ EVERY LEVEL IS DIFFERENT. STEEL NEVER BREAKS. CATCH GOLD FOR A WIDE PADDLE.</p>
     e.preventDefault();
     pointerX = toLogicalX(e.clientX);
     lastPY = toLogicalY(e.clientY);
+    if (state === 'choose') {
+      var i = cardAt(pointerX, toLogicalY(e.clientY));
+      if (i >= 0) pickPath(i);
+      return;
+    }
     if (state === 'over') reset(true); else launch();
   });
 
@@ -1176,6 +1350,7 @@ EVERY LEVEL IS DIFFERENT. STEEL NEVER BREAKS. CATCH GOLD FOR A WIDE PADDLE.</p>
   padDY = 0;
 
   function tapAction() {
+    if (state === 'choose') return;      // taps on the pad don't pick a path
     if (state === 'over') reset(true); else launch();
   }
 
