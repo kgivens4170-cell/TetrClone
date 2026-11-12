@@ -1,5 +1,5 @@
 /*
- * Elemental brick palettes + animated, hyper-pixelated brick renderer.
+ * Elemental brick palettes + animated, high-detail pixel brick renderer.
  *
  * Classic script (no modules, no build step), so it works from file:// and
  * from any <script> tag. Exposes window.BrickPalettes (and module.exports
@@ -7,76 +7,77 @@
  *
  * Usage:
  *   const { PALETTES, drawHalo, drawBrick } = BrickPalettes;
- *   drawHalo(ctx, PALETTES[0], x, y, 6, seed, t);   // optional glow ring
- *   drawBrick(ctx, PALETTES[0], x, y, 6, seed, t);  // scale = screen px per logical px
+ *   drawHalo(ctx, PALETTES[0], x, y, 2, seed, t);   // optional glow ring
+ *   drawBrick(ctx, PALETTES[0], x, y, 2, seed, t);  // scale = units per sprite pixel
  *
- *   x, y  : top-left screen position of the brick's logical grid
- *   scale : screen pixels per logical pixel (use integers for crisp pixels)
+ *   x, y  : top-left position of the brick in the context's units
+ *   scale : context units per sprite pixel
  *   seed  : any integer; keeps each brick's texture stable across frames
  *   t     : time in seconds (e.g. performance.now() / 1000)
  *
- * Each brick is a 16 x 7 logical-pixel grid. Animation is computed per frame
- * from t, so there is no per-brick state to manage.
+ * Each brick is a 32 x 14 sprite: a bevelled frame around an element texture,
+ * with an animation on top. The still part of each brick is drawn once into a
+ * cache at the context's real resolution, so the detail costs almost nothing
+ * per frame; only the animated pixels are drawn every frame.
  */
 (function (root) {
   'use strict';
 
-  var W = 16;          // logical pixels across
-  var H = 7;           // logical pixels down
+  var W = 32;          // sprite pixels across
+  var H = 14;          // sprite pixels down
   var TAU = Math.PI * 2;
 
   /*
-   * tones: [0] outline / deep shadow, [1] dark bevel, [2] base,
-   *        [3] light / bright, [4] spark (hottest highlight)
-   * glow : colour of the pixel halo drawn around the brick
-   * fx   : name of the element animation in FX below
+   * tones: [0] outline / deep shadow, [1] dark, [2] base, [3] light, [4] spark (hottest highlight)
+   * glow : colour of the halo drawn around the brick
+   * fx   : name of the element texture and animation below
    */
   var PALETTES = [
     {
       id: 'inferno', name: 'Inferno', element: 'Fire',
-      note: 'Molten core. Embers climb and flame tips flicker.',
+      note: 'Molten core. Flame tongues lick upward and embers climb.',
       tones: ['#2a0800', '#7d1a02', '#ff4f0f', '#ffb42a', '#fff7b8'],
       glow: '#ff5a0a', fx: 'ember'
     },
     {
       id: 'tidal', name: 'Tidal', element: 'Water',
-      note: 'Deep current. A bright wave rolls across the face.',
+      note: 'Deep current. Ripples roll and a bright wave crosses the face.',
       tones: ['#021a3d', '#0b4a8f', '#1f94ff', '#86f4ff', '#ffffff'],
       glow: '#2fb8ff', fx: 'wave'
     },
     {
       id: 'verdant', name: 'Verdant', element: 'Poison',
-      note: 'Toxic bloom. Bubbles rise and spores pulse.',
+      note: 'Toxic bloom. Grass blades on dark soil, bubbles rising.',
       tones: ['#071f0e', '#17602a', '#2fdc4a', '#d4ff3a', '#f6ffc4'],
       glow: '#7dff3a', fx: 'bubble'
     },
     {
       id: 'thunder', name: 'Thunder', element: 'Lightning',
-      note: 'Mostly calm, then a crackle flashes white with a zigzag arc.',
+      note: 'A jagged bolt runs through it. Now and then it flashes white.',
       tones: ['#14093a', '#3a2490', '#ffe81a', '#fffbd6', '#ffffff'],
       glow: '#b9a6ff', fx: 'thunder'
     },
     {
       id: 'glacier', name: 'Glacier', element: 'Ice',
-      note: 'Cut crystal facets. A sparkle glints across the surface.',
+      note: 'Cut crystal facets. A long glint slides across the surface.',
       tones: ['#0a2c4a', '#2a6f9e', '#9cf0ff', '#e6ffff', '#ffffff'],
       glow: '#7fe7ff', fx: 'glacier'
     },
     {
       id: 'gale', name: 'Gale', element: 'Air',
-      note: 'Light and fast. Streaks of wind slide through the brick.',
+      note: 'Light and fast. Wind swirls and streaks slide through.',
       tones: ['#2e3f55', '#6e8fb0', '#cfeeff', '#ffffff', '#9dffd6'],
       glow: '#b8f0ff', fx: 'gale'
     },
     {
       id: 'terra', name: 'Terra', element: 'Earth',
-      note: 'Cracked stone with magma veins that breathe.',
+      note: 'Mortared stone blocks with magma veins that breathe.',
       tones: ['#1f0c04', '#5a2a12', '#a8552a', '#ff9a3c', '#ffe0a0'],
       glow: '#ff7a20', fx: 'terra'
     },
     {
       id: 'void', name: 'Void', element: 'Shadow',
-      note: 'Dark matter. A violet ring of sparks orbits the core.',
+      note: 'Dark matter full of stars. A violet ring orbits the core.',
       tones: ['#04010c', '#1b0838', '#5b19c9', '#d05cff', '#ffc6ff'],
       glow: '#a040ff', fx: 'void'
     }
@@ -94,203 +95,274 @@
     return ((a % n) + n) % n;
   }
 
+  // The element texture and animation cover the inner area, inside the bevelled frame.
+  var IX0 = 2, IX1 = W - 3, IY0 = 2, IY1 = H - 3;     // inner area, inclusive
+  var BASE = IY1 - 1;                                  // first of the two bottom rows
+
   /*
-   * Element animations. Each takes interior pixel (x, y), time t and seed s,
-   * and returns a tone index (0-4) to override the base colour, or -1 to keep it.
+   * Static element textures: the detail that shows what each brick is made of.
+   * Each returns a tone index (0-4) for an inner pixel, or -1 to keep the base shading.
+   * Seeded, so every brick keeps its own pattern.
    */
-  var FX = {
-    // Rising embers, with flame tips that flicker.
-    ember: function (x, y, t, s) {
-      var r = hash(x, 0, s);
-      if (y === 1 && Math.sin(x * 1.9 + t * 9 + r * TAU) > 0.2) return 3;
-      if (r > 0.7) {
-        var pos = (H - 2) - mod(t * 3 + r * 7, H - 2);
-        if (Math.round(pos) === y) return 4;
-      }
-      return -1;
-    },
-
-    // A bright band that rolls across, plus splash glints on top.
-    wave: function (x, y, t, s) {
-      var c = 3 + 1.3 * Math.sin(x * 0.8 + t * 3.2 + s);
-      if (Math.abs(y - c) < 0.6) return 3;
-      if (y === 1 && hash(x, Math.floor(t * 8), s) > 0.92) return 4;
-      return -1;
-    },
-
-    // Bubbles rising through the brick, plus pulsing spores.
-    bubble: function (x, y, t, s) {
-      var r = hash(x, 0, s);
-      if (r > 0.65) {
-        var pos = (H - 2) - mod(t * (1.2 + r) + r * 9, H - 2);
-        if (Math.round(pos) === y) return 4;
-      }
-      if (y === 3 && hash(x, Math.floor(t * 4), s) > 0.9) return 3;
-      return -1;
-    },
-
-    // Calm most of the time, then a white flash with a zigzag arc.
-    thunder: function (x, y, t, s) {
-      var k = Math.floor(t * 6);
-      if (hash(k, 0, s) < 0.82) return -1;
-      if (y === 3 + mod(x + k, 3) - 1) return 4;
-      return 3;
-    },
-
-    // A plus-shaped sparkle travels across the facets.
-    glacier: function (x, y, t, s) {
-      var gx = Math.round(mod(t * 3 + s, W + 4)) - 2;
-      var gy = 3;
-      if (Math.abs(x - gx) + Math.abs(y - gy) <= 1) return 4;
-      if (mod(x + y * 2 + s, 7) === 0) return 3;
-      return -1;
-    },
-
-    // Diagonal wind streaks sliding sideways.
-    gale: function (x, y, t, s) {
-      var m = mod(x - Math.floor(t * 14) + y * 3 + s, 9);
-      if (m === 0) return 4;
-      if (m === 4 || m === 5) return 3;
-      return -1;
-    },
-
-    // Cracks that glow with lava, pulsing in and out.
-    terra: function (x, y, t, s) {
-      var crack = mod(x * 3 + y * 5 + s * 7, 13) === 0 ||
-                  (mod(x + 2 * y + s, 17) === 0 && y > 1);
-      if (!crack) return -1;
-      return Math.sin(t * 2.2 + x * 0.5 + s) > -0.2 ? 4 : 3;
-    },
-
-    // A ring of sparks orbiting the centre of the brick.
-    void: function (x, y, t, s) {
-      var dx = x - (W - 1) / 2;
-      var dy = (y - (H - 1) / 2) * 2;     // pixels are ~2x taller than wide
-      var d = Math.sqrt(dx * dx + dy * dy);
-      if (Math.abs(d - 4.0) > 0.7) return -1;
-      var a = mod(Math.atan2(dy, dx) - t * 2.5 + s, TAU);
-      if (a < 1.0) return 4;
-      if (a < 1.8) return 3;
-      return -1;
-    }
-  };
-
-  // Static element textures: the detail that shows what each brick is made of.
-  // Each returns a tone index for an interior pixel, or -1 to keep the base shading.
-  // They are seeded, so every brick keeps its own pattern from frame to frame.
   var TEXTURES = {
-    ember: function (x, y, s) {                     // flame tongues rising from the base
-      var h = 1 + Math.floor(hash(x, 0, s) * 4);    // tongue height in pixels
-      var top = H - 2 - h;                          // y of the tongue tip
-      if (y === H - 2) return 1;                    // embers at the base
-      if (y > top) return hash(x, y, s) > 0.85 ? 3 : 2;
-      if (y === top) return hash(x, 1, s) > 0.7 ? 4 : 3;
+    ember: function (x, y, s) {                     // flame tongues over glowing embers
+      if (y >= BASE) return hash(x, y, s) > 0.8 ? 3 : 1;
+      var col = x >> 1;
+      var h = 2 + Math.floor(hash(col, 0, s) * 6);  // tongue height
+      var top = BASE - h;
+      if (y === top) return hash(col, 1, s) > 0.5 ? 4 : 3;
+      if (y > top && y <= top + 2) return 3;
+      if (y > top) return hash(x, y, s) > 0.92 ? 3 : 2;
       return -1;
     },
 
-    wave: function (x, y, s) {                      // ripples and a bright surface
-      if (y === 1) return (x + s) % 5 === 0 ? 4 : 3;
-      if (y === H - 2) return 1;
-      if (y % 2 === 0 && (x + s + y) % 4 < 2) return 3;
-      if (y % 2 === 1 && (x + s) % 6 === 0) return 4;
+    wave: function (x, y, s) {                      // bright surface, ripples, deep water
+      if (y === IY0) return (x + s) % 9 === 0 ? 4 : 3;
+      if (y === IY0 + 1) return (x + s) % 4 === 0 ? 3 : -1;
+      if (y >= BASE) return 1;
+      if (y % 3 === 0 && (x + s + y * 2) % 8 < 4) return 3;
+      if (y % 3 === 1 && (x + s + y * 2) % 8 === 4) return 1;
+      if ((x * 7 + y * 3 + s) % 37 === 0) return 4;
       return -1;
     },
 
-    bubble: function (x, y, s) {                    // grass blades and rising bubbles
-      var h = 1 + Math.floor(hash(x, 2, s) * 3);
-      if (y === H - 2) return 1;
-      if (y >= H - 2 - h && hash(x, 3, s) > 0.3) return y === H - 2 - h ? 3 : 2;
-      if (hash(x, y, s) > 0.93) return 4;
+    bubble: function (x, y, s) {                    // grass blades on dark soil, dew
+      if (y >= BASE) return hash(x, y, s) > 0.85 ? 2 : 1;
+      if (hash(x, 3, s) > 0.3) {
+        var h = 2 + Math.floor(hash(x, 2, s) * 6);
+        var tip = BASE - h;
+        if (y === tip) return 3;
+        if (y > tip) return (x + y) % 5 === 0 ? 3 : 2;
+      }
+      if (hash(x, y, s) > 0.97) return 4;
       return -1;
     },
 
-    thunder: function (x, y, s) {                   // a jagged bolt across the face
-      var yb = 2 + ((x * 3 + s) % 3);
+    thunder: function (x, y, s) {                   // a jagged bolt with a glow around it
+      var seg = x >> 2, f = (x & 3) / 4;
+      var span = IY1 - IY0 - 3;
+      var y0 = IY0 + 1 + Math.floor(hash(seg, 0, s) * span);
+      var y1 = IY0 + 1 + Math.floor(hash(seg + 1, 0, s) * span);
+      var yb = Math.round(y0 + (y1 - y0) * f);
       if (y === yb) return 4;
-      if (Math.abs(y - yb) === 1 && hash(x, y, s) > 0.5) return 3;
-      if (y === H - 2) return 1;
+      if (Math.abs(y - yb) === 1) return 3;
+      if (y >= BASE) return 1;
+      if (hash(x, y, s) > 0.96) return 4;
       return -1;
     },
 
-    glacier: function (x, y, s) {                   // cut facets and glints
-      if (hash(x, y, s) > 0.93) return 4;
-      if ((x + 2 * y + s) % 6 === 0) return 3;
-      if ((x - y + s) % 5 === 0) return 1;
+    glacier: function (x, y, s) {                   // cut facets with sharp edges, glints
+      if (hash(x, y, s) > 0.97) return 4;
+      var d = (x + 2 * y + s) % 11;
+      if (d === 0) return 3;
+      if (d === 1) return 4;
+      if ((x - y + s + 99) % 9 === 0) return 1;
+      if (y >= BASE) return 1;
       return -1;
     },
 
-    gale: function (x, y, s) {                      // wind swirls and leaf flecks
-      var wave = 2 + Math.round(Math.sin(x * 0.9 + s * 0.7));
-      if (y === wave) return 3;
-      if (y === wave + 1 && (x + s) % 3 === 0) return 4;
-      if (hash(x, y, s) > 0.9) return 4;
-      if (y === H - 2) return 1;
+    gale: function (x, y, s) {                      // two wind swirls and leaf flecks
+      var w1 = IY0 + 2 + Math.round(Math.sin(x * 0.45 + s) * 2);
+      var w2 = IY0 + 7 + Math.round(Math.sin(x * 0.45 + s + 2.2) * 2);
+      if ((y === w1 || y === w2) && (x + s) % 7 > 1) return 3;
+      if ((y === w1 + 1 || y === w2 + 1) && (x + s) % 5 === 0) return 4;
+      if (hash(x, y, s) > 0.96) return 4;
+      if (y >= BASE) return 1;
       return -1;
     },
 
-    terra: function (x, y, s) {                     // stone blocks with mortar, grains and cracks
-      var off = (y % 2) * 4;
-      if (y === 3 || (x + off + s) % 8 === 0) return 1;
+    terra: function (x, y, s) {                     // mortared stone blocks with lit edges, grains, pits
+      var band = Math.floor((y - IY0) / 4), inBand = (y - IY0) % 4;
+      var off = (band % 2) * 6;
+      if (inBand === 3) return 1;
+      if ((x + off + s) % 12 === 0) return 1;
+      if (inBand === 0 && (x + off + s) % 12 !== 1) return 3;
       if (hash(x, y, s) > 0.9) return 3;
-      if (hash(x, y, s) < 0.05) return 0;
+      if (hash(x, y, s) < 0.04) return 0;
       return -1;
     },
 
-    void: function (x, y, s) {                      // dark matter with stars and violet wisps
-      if (hash(x, y, s) > 0.92) return 4;
-      if ((x + y + s) % 7 === 0) return 2;
-      if (hash(x, y, s + 9) < 0.15) return 0;
+    void: function (x, y, s) {                      // dark matter, stars, violet wisps
+      var h = hash(x, y, s);
+      if (h > 0.975) return 4;
+      if (h > 0.955) return 3;
+      if ((x + y * 2 + s) % 13 === 0) return 2;
+      if (hash(x, y, s + 9) < 0.18) return 0;
       return 1;
     }
   };
 
-  function noTexture() { return -1; }
+  /*
+   * Element animations on top of the texture. Each takes an inner pixel (x, y),
+   * time t and seed s, and returns a tone index to draw, or -1 for nothing.
+   */
+  var FX = {
+    ember: function (x, y, t, s) {
+      var r = hash(x >> 1, 0, s);
+      if (y <= IY0 + 2 && Math.sin(x * 0.95 + t * 9 + r * TAU) > 0.45) return 3;   // flickering tips
+      if (r > 0.72) {
+        var pos = BASE - mod(t * 7 + r * 14, BASE - IY0);
+        if (Math.round(pos) === y && (x & 1) === 0) return 4;                    // rising embers
+      }
+      return -1;
+    },
 
-  // Static shape and bevel of the brick. Returns -1 for transparent corners.
+    wave: function (x, y, t, s) {
+      var c = H / 2 + (H / 4) * Math.sin(x * 0.4 + t * 3.2 + s);
+      if (Math.abs(y - c) < 0.7) return 3;
+      if (y === IY0 && hash(x, Math.floor(t * 8), s) > 0.94) return 4;
+      return -1;
+    },
+
+    bubble: function (x, y, t, s) {
+      var r = hash(x >> 1, 0, s);
+      if (r > 0.8) {
+        var py = Math.round(BASE - mod(t * (3 + r * 3) + r * 18, BASE - IY0));
+        if (py === y) return 4;
+        if (py + 1 === y) return 3;
+      }
+      if (y === (H >> 1) && hash(x, Math.floor(t * 4), s) > 0.93) return 3;
+      return -1;
+    },
+
+    thunder: function (x, y, t, s) {
+      var k = Math.floor(t * 6);
+      if (hash(k, 0, s) < 0.82) return -1;           // mostly calm
+      var yb = Math.round(H / 2 + Math.sin(x * 1.1 + k) * 2);
+      return y === yb ? 4 : 3;                        // white flash with an arc
+    },
+
+    glacier: function (x, y, t, s) {
+      var gx = Math.round(mod(t * 7 + s * 3, W + 8)) - 4, gy = H >> 1;
+      var d = Math.abs(x - gx) + Math.abs(y - gy);
+      if (d <= 1 || (d <= 3 && (x === gx || y === gy))) return 4;     // long plus-shaped glint
+      return -1;
+    },
+
+    gale: function (x, y, t, s) {
+      var m = mod(x - Math.floor(t * 30) + y * 3 + s, 17);
+      if (m === 0) return 4;
+      if (m >= 1 && m <= 3) return 3;
+      return -1;
+    },
+
+    terra: function (x, y, t, s) {                    // magma veins that breathe
+      var crack = mod(x * 3 + y * 5 + s * 7, 29) === 0 ||
+                  (mod(x + 2 * y + s, 31) === 0 && y > IY0);
+      if (!crack) return -1;
+      return Math.sin(t * 2.2 + x * 0.3 + s) > -0.2 ? 4 : 3;
+    },
+
+    void: function (x, y, t, s) {                     // a ring of sparks orbiting the core
+      var dx = x - (W - 1) / 2, dy = (y - (H - 1) / 2) * 2.2;
+      var d = Math.sqrt(dx * dx + dy * dy);
+      if (Math.abs(d - 8) > 1) return -1;
+      var a = mod(Math.atan2(dy, dx) - t * 2.5 + s, TAU);
+      if (a < 0.9) return 4;
+      if (a < 1.7) return 3;
+      return -1;
+    }
+  };
+
+  function none() { return -1; }
+
+  // Frame and base shading. Returns -1 for the cut-away rounded corners.
   function tileIndex(x, y, s) {
-    var edgeX = (x === 0 || x === W - 1);
-    var edgeY = (y === 0 || y === H - 1);
-    if (edgeX && edgeY) return -1;      // rounded corners
-    if (edgeX || edgeY) return 0;       // outline
+    var cx = Math.min(x, W - 1 - x), cy = Math.min(y, H - 1 - y);
+    if (cx + cy < 2) return -1;                       // rounded corners
+    if (cx === 0 || cy === 0 || (cx === 1 && cy === 1)) return 0;   // outline
     var idx = 2;
-    if (y === 1) idx = 3;               // top bevel catches light
-    if (y === H - 2) idx = 1;           // bottom bevel in shadow
-    if (x === W - 2 && idx === 2) idx = 1;
+    if (y === 1) idx = 3;                             // top bevel catches light
+    else if (y === H - 2) idx = 1;                    // bottom bevel in shadow
+    else if (x === 1) idx = 3;                        // left bevel lit
+    else if (x === W - 2) idx = 1;                    // right bevel shaded
     if (idx === 2) {
-      var n = hash(x, y, s);            // fixed speckle texture per brick
-      if (n > 0.9) idx = 3;
-      else if (n < 0.08) idx = 1;
+      var n = hash(x, y, s);                          // fixed speckle per brick
+      if (n > 0.92) idx = 3;
+      else if (n < 0.06) idx = 1;
     }
     return idx;
   }
 
-  /*
-   * Draw one animated brick. px, py is the top-left screen position of the
-   * logical grid. Draws only solid rectangles, so the edges stay hard.
-   */
-  function drawBrick(ctx, palette, px, py, scale, seed, t) {
+  function inner(x, y) {
+    return x >= IX0 && x <= IX1 && y >= IY0 && y <= IY1;
+  }
+
+  // Tone index of the still sprite (frame + texture) at one pixel
+  function staticIndex(palette, x, y, s) {
+    var idx = tileIndex(x, y, s);
+    if (idx < 0 || !inner(x, y)) return idx;
+    var tx = (TEXTURES[palette.fx] || none)(x, y, s);
+    return tx >= 0 ? tx : idx;
+  }
+
+  function paintStatic(ctx, palette, ox, oy, scale, s) {
     var tones = palette.tones;
-    var fx = FX[palette.fx] || function () { return -1; };
-    var tex = TEXTURES[palette.fx] || noTexture;
-    var s = seed | 0;
     for (var y = 0; y < H; y++) {
       for (var x = 0; x < W; x++) {
-        var idx = tileIndex(x, y, s);
+        var idx = staticIndex(palette, x, y, s);
         if (idx < 0) continue;
-        if (idx > 0) {
-          var tx = tex(x, y, s);            // static element detail
-          if (tx >= 0) idx = tx;
-          var o = fx(x, y, t, s);           // animation on top
-          if (o >= 0) idx = o;
-        }
         ctx.fillStyle = tones[idx];
+        ctx.fillRect(ox + x * scale, oy + y * scale, scale, scale);
+      }
+    }
+  }
+
+  // ----- cache of still sprites, drawn at the destination's real resolution -----
+  var cache = {}, cacheSize = 0;
+  var canCache = typeof document !== 'undefined' && document.createElement;
+
+  function deviceScale(ctx) {
+    if (ctx.getTransform) {
+      var m = ctx.getTransform();
+      return Math.sqrt(m.a * m.a + m.b * m.b) || 1;
+    }
+    return 1;
+  }
+
+  function cachedSprite(palette, scale, s, dev) {
+    var px = Math.max(1, Math.round(scale * dev));    // device pixels per sprite pixel
+    var key = palette.id + '|' + s + '|' + px;
+    var c = cache[key];
+    if (c) return c;
+    if (cacheSize > 3000) { cache = {}; cacheSize = 0; }
+    c = document.createElement('canvas');
+    c.width = W * px;
+    c.height = H * px;
+    paintStatic(c.getContext('2d'), palette, 0, 0, px, s);
+    cache[key] = c;
+    cacheSize++;
+    return c;
+  }
+
+  /*
+   * Draw one animated brick at (px, py), each sprite pixel `scale` units wide.
+   */
+  function drawBrick(ctx, palette, px, py, scale, seed, t) {
+    var s = seed | 0;
+    if (canCache) {
+      var sprite = cachedSprite(palette, scale, s, deviceScale(ctx));
+      var smooth = ctx.imageSmoothingEnabled;
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(sprite, px, py, W * scale, H * scale);
+      ctx.imageSmoothingEnabled = smooth;
+    } else {
+      paintStatic(ctx, palette, px, py, scale, s);
+    }
+    // Animated pixels on top
+    var fx = FX[palette.fx] || none, tones = palette.tones;
+    for (var y = IY0; y <= IY1; y++) {
+      for (var x = IX0; x <= IX1; x++) {
+        var o = fx(x, y, t, s);
+        if (o < 0) continue;
+        ctx.fillStyle = tones[o];
         ctx.fillRect(px + x * scale, py + y * scale, scale, scale);
       }
     }
   }
 
   /*
-   * One-logical-pixel glow ring around a brick, with a gentle pulse.
+   * One-sprite-pixel glow ring around a brick, with a gentle pulse.
    * Draw it before drawBrick.
    */
   function drawHalo(ctx, palette, px, py, scale, seed, t) {
@@ -313,7 +385,8 @@
     PALETTES: PALETTES,
     drawBrick: drawBrick,
     drawHalo: drawHalo,
-    tileIndex: tileIndex
+    tileIndex: tileIndex,
+    staticIndex: staticIndex
   };
 
   root.BrickPalettes = api;

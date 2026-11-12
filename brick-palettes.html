@@ -61,8 +61,8 @@
 
 <header>
   <h1>ELEMENTAL BRICKS</h1>
-  <p>Eight animated brick palettes. Each brick is a 16 x 7 pixel sprite, drawn with
-     hard pixel edges. Load <code>brick-palettes.js</code> and call
+  <p>Eight animated brick palettes. Each brick is a 32 x 14 pixel sprite: a bevelled
+     frame around its element texture, drawn with hard pixel edges. Load <code>brick-palettes.js</code> and call
      <code>BrickPalettes.drawBrick(ctx, palette, x, y, scale, seed, t)</code>.</p>
 </header>
 
@@ -74,7 +74,7 @@
   'use strict';
   var BP = window.BrickPalettes;
   var W = BP.W, H = BP.H;
-  var SCALE = 8;                  // screen pixels per logical pixel
+  var SCALE = 4;                  // screen pixels per sprite pixel
   var BRICKS = 3;                 // bricks shown per card
   var CELL_W = (W + 4) * SCALE;   // room for the glow ring on both sides
   var CELL_H = (H + 4) * SCALE;

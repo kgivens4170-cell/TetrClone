@@ -90,7 +90,7 @@ CLEAR A LEVEL, THEN CHOOSE YOUR PATH. EVERY SCENE IS DIFFERENT.</p>
   var PICKUP_CHANCE = 0.12, WIDE_TIME = 8;
 
   // Path cards shown after each cleared level
-  var CARD_X0 = 4, CARD_Y = 36, CARD_W = 58, CARD_H = 92, CARD_GAP = 5;
+  var CARD_X0 = 4, CARD_Y = 38, CARD_W = 58, CARD_H = 92, CARD_GAP = 5;
 
   // Ball colour climbs through these stops as it bounces.
   var BOUNCE_STOPS = ['#ffffff', '#ffe27a', '#ff9a2a', '#ff3a6d', '#c040ff'];
@@ -376,7 +376,8 @@ CLEAR A LEVEL, THEN CHOOSE YOUR PATH. EVERY SCENE IS DIFFERENT.</p>
     return n;
   }
 
-  function scaleFor(n) { return n <= 3 ? 2 : 1; }
+  // Units per sprite pixel: big 32x14 bricks for levels 1-3, then 16x7
+  function scaleFor(n) { return n <= 3 ? 1 : 0.5; }
   function cellWFor(s) { return BW * s + GAP_X; }
   function cellHFor(s) { return BH * s + GAP_Y; }
   function colsFor(s) { return Math.floor((LW + GAP_X) / cellWFor(s)); }
@@ -485,7 +486,7 @@ CLEAR A LEVEL, THEN CHOOSE YOUR PATH. EVERY SCENE IS DIFFERENT.</p>
   // ---------- Roguelite boons: picked on the path cards ----------
   var BOONS = [
     { name: 'SWIFT', lines: ['BALL', '+12% SPEED'], apply: function (run) { run.speedMul *= 1.12; } },
-    { name: 'HEAVY', lines: ['SCORE', 'x1.5 POINTS'], apply: function (run) { run.scoreMul *= 1.5; } },
+    { name: 'HEAVY', lines: ['SCORE', 'x1.5'], apply: function (run) { run.scoreMul *= 1.5; } },
     { name: 'SHIELD', lines: ['ONE FREE', 'FLOOR SAVE'], apply: function (run) { run.shields += 1; } },
     { name: 'GOLDEN', lines: ['MORE', 'GOLD DROPS'], apply: function (run) { run.dropBonus += 0.15; } },
     { name: 'VITALITY', lines: ['+1 LIFE', ''], apply: function (run) { run.lifeBonus += 1; } },
@@ -694,6 +695,35 @@ CLEAR A LEVEL, THEN CHOOSE YOUR PATH. EVERY SCENE IS DIFFERENT.</p>
   var g = cv.getContext('2d');
   g.imageSmoothingEnabled = false;
 
+  // Render at the screen's real resolution. The game keeps its 192x180 logical
+  // units, but each unit is drawn as RES x RES device pixels, so the fine detail
+  // (half-unit particles, the ball's shading, text, brick sprites) stays sharp.
+  var RES = 4;
+  function fitCanvas() {
+    var cssW = cv.getBoundingClientRect().width || LW * 3;
+    var dpr = window.devicePixelRatio || 1;
+    var res = clamp(Math.round(cssW * dpr / LW), 2, 8);
+    if (res !== RES || cv.width !== LW * res) {
+      RES = res;
+      cv.width = LW * RES;
+      cv.height = LH * RES;
+      g.imageSmoothingEnabled = false;
+    }
+  }
+  fitCanvas();
+  window.addEventListener('resize', fitCanvas);
+
+  var FONT_BIG = '8px "Press Start 2P", monospace';
+  var FONT_HUD = '6px "Press Start 2P", monospace';
+  var FONT_CARD = '5px "Press Start 2P", monospace';
+  if (document.fonts && document.fonts.load) document.fonts.load(FONT_BIG);
+
+  // A faint starfield behind the play area
+  var STARS = [];
+  for (var si = 0; si < 46; si++) {
+    STARS.push({ x: Math.random() * LW, y: Math.random() * LH, p: Math.random() * TAU, b: Math.random() });
+  }
+
   var state, bricks, ball, paddle, lives, score, time, particles, keys, pointerX;
   var trail, flash, paddleFlash, recoil, shake, combo, lastBreak, comboColor;
   var level, stateT, curSpeed, pickups, paddleDY, levelName, padDX, padDY;
@@ -703,16 +733,22 @@ CLEAR A LEVEL, THEN CHOOSE YOUR PATH. EVERY SCENE IS DIFFERENT.</p>
     return [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
   }
 
-  function ballColor(bounces) {
+  function mixRGB(a, b, f) {
+    return [Math.round(a[0] + (b[0] - a[0]) * f), Math.round(a[1] + (b[1] - a[1]) * f), Math.round(a[2] + (b[2] - a[2]) * f)];
+  }
+
+  function rgbStr(c) { return 'rgb(' + c[0] + ',' + c[1] + ',' + c[2] + ')'; }
+
+  function ballRGB(bounces) {
     var t = Math.min(bounces / BOUNCE_FULL, 1) * (BOUNCE_STOPS.length - 1);
     var i = Math.min(Math.floor(t), BOUNCE_STOPS.length - 2);
-    var f = t - i;
-    var a = hexToRgb(BOUNCE_STOPS[i]), b = hexToRgb(BOUNCE_STOPS[i + 1]);
-    var r = Math.round(a[0] + (b[0] - a[0]) * f);
-    var gg = Math.round(a[1] + (b[1] - a[1]) * f);
-    var bb = Math.round(a[2] + (b[2] - a[2]) * f);
-    return 'rgb(' + r + ',' + gg + ',' + bb + ')';
+    return mixRGB(hexToRgb(BOUNCE_STOPS[i]), hexToRgb(BOUNCE_STOPS[i + 1]), t - i);
   }
+
+  function ballColor(bounces) { return rgbStr(ballRGB(bounces)); }
+
+  // Snap to the half-unit grid the fine details are drawn on
+  function half(v) { return Math.round(v * 2) / 2; }
 
   function newBall() {
     return { x: paddle.x + paddle.w / 2, y: paddle.y - BALL_R - 1, vx: 0, vy: 0, bounces: 0 };
@@ -907,11 +943,12 @@ CLEAR A LEVEL, THEN CHOOSE YOUR PATH. EVERY SCENE IS DIFFERENT.</p>
 
     ringAt(hx, hy, pal.tones[4], 0.25);
 
-    for (var y = 0; y < BH; y++) {
-      for (var x = 0; x < BW; x++) {
-        var idx = BP.tileIndex(x, y, k.seed);
+    // One chunk per 2x2 block of sprite pixels, coloured like that part of the brick
+    for (var y = 0; y < BH; y += 2) {
+      for (var x = 0; x < BW; x += 2) {
+        var idx = BP.staticIndex(pal, x + 1, y + 1, k.seed);
         if (idx < 0) continue;
-        var px = k.x + (x + 0.5) * k.s, py = k.y + (y + 0.5) * k.s;
+        var px = k.x + (x + 1) * k.s, py = k.y + (y + 1) * k.s;
         var dx = px - hx, dy = py - hy, d = Math.hypot(dx, dy) || 1;
         var sp = prof.spread * (0.5 + Math.random() * 0.8);
         var vx = (dx / d) * sp + (Math.random() - 0.5) * 30;
@@ -928,7 +965,8 @@ CLEAR A LEVEL, THEN CHOOSE YOUR PATH. EVERY SCENE IS DIFFERENT.</p>
           x: px, y: py, vx: vx, vy: vy, g: prof.g, drag: prof.drag,
           life: life, max: life, color: col,
           kind: prof.kinds[(Math.random() * prof.kinds.length) | 0],
-          pull: prof.pull ? 5 : 0, cx: cx, cy: cy, wob: Math.random() * TAU
+          pull: prof.pull ? 5 : 0, cx: cx, cy: cy, wob: Math.random() * TAU,
+          sz: Math.max(0.5, k.s)
         });
       }
     }
@@ -1000,28 +1038,29 @@ CLEAR A LEVEL, THEN CHOOSE YOUR PATH. EVERY SCENE IS DIFFERENT.</p>
     for (var i = 0; i < particles.length; i++) {
       var q = particles[i];
       var a = Math.max(0, q.life / q.max);
-      var x = Math.round(q.x), y = Math.round(q.y);
+      var x = half(q.x), y = half(q.y), h = 0.5;      // fine half-unit pixels
+      var sz = q.sz || h;
       g.globalAlpha = Math.min(1, a * 1.6);
       g.fillStyle = q.color;
       if (q.kind === 'bubble') {
-        g.fillRect(x, y, 2, 2);
+        g.fillRect(x, y + h, 1.5, h); g.fillRect(x + h, y, h, 1.5);   // small round bubble
       } else if (q.kind === 'shard') {
-        if (Math.sin(q.wob + q.life * 12) > 0) { g.fillRect(x, y, 1, 1); g.fillRect(x + 1, y + 1, 1, 1); }
-        else g.fillRect(x, y, 2, 1);
+        if (Math.sin(q.wob + q.life * 12) > 0) { g.fillRect(x, y, sz, sz); g.fillRect(x + sz, y + sz, h, h); }
+        else g.fillRect(x, y, sz * 2, h);
       } else if (q.kind === 'streak') {
-        g.fillRect(q.vx >= 0 ? x - 2 : x, y, 3, 1);
+        g.fillRect(q.vx >= 0 ? x - 1.5 : x, y, 2, h);
       } else if (q.kind === 'glint') {
-        g.fillRect(x - 1, y, 3, 1); g.fillRect(x, y - 1, 1, 3);
+        g.fillRect(x - 1, y, 2.5, h); g.fillRect(x, y - 1, h, 2.5);
       } else if (q.kind === 'puff') {
-        g.globalAlpha *= 0.5; g.fillRect(x, y, 2, 2);
+        g.globalAlpha *= 0.5; g.fillRect(x, y, 1.5, 1.5);
       } else if (q.kind === 'ring') {
-        var r = Math.round((1 - a) * 9) + 1;
-        g.fillRect(x - r, y - r, 2 * r + 1, 1);
-        g.fillRect(x - r, y + r, 2 * r + 1, 1);
-        g.fillRect(x - r, y - r, 1, 2 * r + 1);
-        g.fillRect(x + r, y - r, 1, 2 * r + 1);
+        var r = half((1 - a) * 9 + 1);
+        g.fillRect(x - r, y - r, 2 * r + h, h);
+        g.fillRect(x - r, y + r, 2 * r + h, h);
+        g.fillRect(x - r, y - r, h, 2 * r + h);
+        g.fillRect(x + r, y - r, h, 2 * r + h);
       } else {
-        g.fillRect(x, y, 1, 1);
+        g.fillRect(x, y, sz, sz);
       }
     }
     g.globalAlpha = 1;
@@ -1052,10 +1091,18 @@ CLEAR A LEVEL, THEN CHOOSE YOUR PATH. EVERY SCENE IS DIFFERENT.</p>
   function drawPickups() {
     for (var i = 0; i < pickups.length; i++) {
       var p = pickups[i];
-      var x = Math.round(p.x), y = Math.round(p.y);
-      g.fillStyle = '#ff9a2a'; g.fillRect(x, y, 6, 4);
-      g.fillStyle = (Math.floor(p.t * 8) % 2) ? '#ff3a6d' : '#ffe27a';
-      g.fillRect(x + 1, y + 1, 4, 2);
+      var x = half(p.x), y = half(p.y), h = 0.5;
+      var pulse = Math.floor(p.t * 8) % 2;
+      g.fillStyle = '#7a3300';                                   // rounded capsule outline
+      g.fillRect(x + h, y, 5, 4); g.fillRect(x, y + h, 6, 3);
+      g.fillStyle = pulse ? '#ff3a6d' : '#ffb42a';               // body
+      g.fillRect(x + h, y + h, 5, 3);
+      g.fillStyle = '#ffe27a';                                   // lit upper half
+      g.fillRect(x + h, y + h, 5, 1);
+      g.fillStyle = '#fff6c8';                                   // highlight
+      g.fillRect(x + 1, y + h, 2, h);
+      g.fillStyle = '#a04a00';                                   // seam
+      g.fillRect(x + 3, y + h, h, 3);
     }
   }
 
@@ -1269,14 +1316,25 @@ CLEAR A LEVEL, THEN CHOOSE YOUR PATH. EVERY SCENE IS DIFFERENT.</p>
     g.fillRect(k.x + x * k.s, k.y + y * k.s, w * k.s, h * k.s);
   }
 
+  // Steel plate: rounded frame, brushed bands, bevels, four rivets with highlights
   function drawSteel(k) {
-    rect(k, 0, 0, BW, BH, '#22232b');
-    rect(k, 1, 1, BW - 2, BH - 2, '#5b5f70');
-    rect(k, 1, 1, BW - 2, 1, '#9aa0b4');
-    rect(k, 1, BH - 2, BW - 2, 1, '#373a48');
-    rect(k, 4 + (k.seed % 5), 3, 5, 1, '#6d7286');
-    rect(k, 2, 2, 1, 1, '#c8cad6'); rect(k, BW - 3, 2, 1, 1, '#c8cad6');   // rivets
-    rect(k, 2, BH - 3, 1, 1, '#c8cad6'); rect(k, BW - 3, BH - 3, 1, 1, '#c8cad6');
+    rect(k, 1, 0, BW - 2, BH, '#1a1b22');                  // outline with cut corners
+    rect(k, 0, 1, BW, BH - 2, '#1a1b22');
+    rect(k, 1, 1, BW - 2, BH - 2, '#5b5f70');              // plate
+    rect(k, 1, 1, BW - 2, 1, '#b4bacb');                    // top bevel
+    rect(k, 1, 2, BW - 2, 1, '#8a90a4');
+    rect(k, 1, 1, 1, BH - 2, '#9aa0b4');                    // left bevel
+    rect(k, 1, BH - 2, BW - 2, 1, '#2f3240');               // bottom bevel
+    rect(k, BW - 2, 1, 1, BH - 2, '#373a48');               // right bevel
+    for (var b = 0; b < 3; b++) {                           // brushed bands
+      var bx = 5 + ((k.seed * 7 + b * 9) % (BW - 14));
+      rect(k, bx, 4 + b * 3, 6 + (b * 3 + k.seed) % 5, 1, b % 2 ? '#6d7286' : '#50546a');
+    }
+    var rv = [[3, 3], [BW - 5, 3], [3, BH - 5], [BW - 5, BH - 5]];
+    for (var i = 0; i < 4; i++) {                           // rivets
+      rect(k, rv[i][0], rv[i][1], 2, 2, '#3a3d4c');
+      rect(k, rv[i][0], rv[i][1], 1, 1, '#e4e7f0');
+    }
     if (k.flash > 0) {
       g.globalAlpha = k.flash / 0.08 * 0.7;
       rect(k, 1, 1, BW - 2, BH - 2, '#ffffff');
@@ -1284,16 +1342,18 @@ CLEAR A LEVEL, THEN CHOOSE YOUR PATH. EVERY SCENE IS DIFFERENT.</p>
     }
   }
 
-  // Cracks on a damaged hard brick
+  // Cracks on a damaged hard brick: a jagged split with a branch
   function drawCracks(k) {
-    g.globalAlpha = 0.75;
-    for (var y = 1; y < BH - 1; y++) {
-      for (var x = 1; x < BW - 1; x++) {
-        if ((x * 7 + y * 13 + k.seed) % 17 === 0 || (x * 3 + y * 5 + k.seed) % 23 === 0) {
-          rect(k, x, y, 1, 1, '#07070d');
-        }
-      }
+    g.globalAlpha = 0.85;
+    var prev = null;
+    for (var x = 4; x < BW - 4; x++) {
+      var y = clamp(Math.round(BH / 2 + Math.sin(x * 0.7 + k.seed) * 2 + ((x * 7 + k.seed) % 3) - 1), 2, BH - 3);
+      rect(k, x, y, 1, 1, '#07070d');
+      if (prev !== null && Math.abs(y - prev) > 1) rect(k, x, Math.min(y, prev) + 1, 1, Math.abs(y - prev) - 1, '#07070d');
+      prev = y;
     }
+    var bx = 8 + (k.seed % 12);
+    for (var j = 0; j < 4; j++) rect(k, bx + j, 3 + j, 1, 1, '#07070d');   // branch
     g.globalAlpha = 1;
   }
 
@@ -1312,9 +1372,9 @@ CLEAR A LEVEL, THEN CHOOSE YOUR PATH. EVERY SCENE IS DIFFERENT.</p>
     g.fillRect(x, y, 1, H); g.fillRect(x + W - 1, y, 1, H);
     g.textBaseline = 'top';
     g.textAlign = 'center';
-    g.font = '8px monospace';
+    g.font = FONT_CARD;
     g.fillStyle = '#ebebf5';
-    g.fillText(c.biome.name, x + W / 2, y + 4);
+    g.fillText(c.biome.name, x + W / 2, y + 5);
     for (var j = 0; j < 3; j++) {                              // element swatches for the scene
       var t = keyPal(c.biome.key[j]).tones;
       g.fillStyle = t[2]; g.fillRect(x + 8 + j * 14, y + 16, 10, 6);
@@ -1331,16 +1391,81 @@ CLEAR A LEVEL, THEN CHOOSE YOUR PATH. EVERY SCENE IS DIFFERENT.</p>
     g.textAlign = 'left';
   }
 
+  // Backdrop: a deep gradient with a faint, slowly twinkling starfield
+  function drawBackdrop() {
+    var grad = g.createLinearGradient(0, 0, 0, LH);
+    grad.addColorStop(0, '#0d0c1c');
+    grad.addColorStop(1, '#050509');
+    g.fillStyle = grad;
+    g.fillRect(0, 0, LW, LH);
+    for (var i = 0; i < STARS.length; i++) {
+      var st = STARS[i];
+      g.globalAlpha = 0.15 + 0.25 * st.b * (0.6 + 0.4 * Math.sin(time * 1.5 + st.p));
+      g.fillStyle = st.b > 0.8 ? '#cfd6ff' : '#7f86b8';
+      g.fillRect(half(st.x), half(st.y), 0.5, 0.5);
+    }
+    g.globalAlpha = 1;
+  }
+
+  // Paddle: a rounded metal bar on a half-unit grid, banded from bright top to dark base
+  var PADDLE_ROWS = ['#22232b', '#eef0f8', '#c8cad6', '#a3a6b6', '#8d8fa0', '#6f7182', '#4c4e5c', '#22232b'];
+  function drawPaddle(col) {
+    var x = half(paddle.x), y = paddle.y + (recoil > 0 ? 1 : 0), w = paddle.w, h = 0.5;
+    g.fillStyle = 'rgba(0,0,0,0.45)';                       // soft shadow
+    g.fillRect(x + 1, y + PADDLE_H, w - 2, h);
+    var flashRows = ['#22232b', '#ffffff', col, col, col, col, col, '#22232b'];
+    var rows = paddleFlash > 0 ? flashRows : PADDLE_ROWS;
+    for (var j = 0; j < 8; j++) {
+      var inset = (j === 0 || j === 7) ? 1 : ((j === 1 || j === 6) ? h : 0);   // rounded ends
+      g.fillStyle = rows[j];
+      g.fillRect(x + inset, y + j * h, w - inset * 2, h);
+    }
+    g.fillStyle = '#22232b';                                 // end caps
+    g.fillRect(x, y + 1, h, 2);
+    g.fillRect(x + w - h, y + 1, h, 2);
+    g.fillStyle = paddleFlash > 0 ? '#ffffff' : '#5b5f70';  // centre grip
+    g.fillRect(x + w / 2 - 3, y + 2, 6, h);
+    if (paddleFlash <= 0) {                                  // gloss sweeping along the top
+      g.fillStyle = 'rgba(255,255,255,0.9)';
+      g.fillRect(half(x + 2 + (time * 22) % (w - 6)), y + h, 2, h);
+    }
+    if (paddle.wideT > 0 && paddle.wideT < 2 && Math.floor(time * 10) % 2) {
+      g.fillStyle = '#ffe27a';                               // the wide paddle is about to end
+      g.fillRect(x, y - 1, w, h);
+    }
+  }
+
+  // Ball: a shaded sphere on a half-unit grid (12x12), tinted by the bounce count
+  function drawBall() {
+    var base = ballRGB(ball.bounces);
+    var light = rgbStr(mixRGB(base, [255, 255, 255], 0.6));
+    var mid = rgbStr(base);
+    var dark = rgbStr(mixRGB(base, [0, 0, 0], 0.4));
+    var rim = rgbStr(mixRGB(base, [0, 0, 0], 0.7));
+    var h = 0.5, ox = half(ball.x - 3), oy = half(ball.y - 3);
+    for (var j = 0; j < 12; j++) {
+      for (var i = 0; i < 12; i++) {
+        var dx = i - 5.5, dy = j - 5.5, d = Math.sqrt(dx * dx + dy * dy);
+        if (d > 5.9) continue;
+        var l = (dx + dy) / 7.8;                             // -1 top-left, +1 bottom-right
+        g.fillStyle = d > 5 ? rim : (l < -0.55 ? light : (l > 0.45 ? dark : mid));
+        g.fillRect(ox + i * h, oy + j * h, h, h);
+      }
+    }
+    g.fillStyle = '#ffffff';                                 // specular glint
+    g.fillRect(ox + 3 * h, oy + 3 * h, 2 * h, h);
+    g.fillRect(ox + 3 * h, oy + 4 * h, h, h);
+  }
+
   function draw() {
     var ox = 0, oy = 0;
     if (shake > 0) {
-      ox = Math.round((Math.random() - 0.5) * shake * 4);
-      oy = Math.round((Math.random() - 0.5) * shake * 4);
+      ox = half((Math.random() - 0.5) * shake * 4);
+      oy = half((Math.random() - 0.5) * shake * 4);
     }
-    g.setTransform(1, 0, 0, 1, 0, 0);
-    g.fillStyle = '#07070d';
-    g.fillRect(0, 0, LW, LH);
-    g.setTransform(1, 0, 0, 1, ox, oy);
+    g.setTransform(RES, 0, 0, RES, 0, 0);
+    drawBackdrop();
+    g.setTransform(RES, 0, 0, RES, ox * RES, oy * RES);
 
     // Bricks
     for (var b = 0; b < bricks.length; b++) {
@@ -1364,60 +1489,35 @@ CLEAR A LEVEL, THEN CHOOSE YOUR PATH. EVERY SCENE IS DIFFERENT.</p>
 
     // Shield line along the bottom while a floor save is held
     if (run.shields > 0) {
-      g.globalAlpha = 0.25 + 0.15 * Math.sin(time * 4) + (shieldFlash > 0 ? 0.4 : 0);
+      g.globalAlpha = 0.3 + 0.2 * Math.sin(time * 4) + (shieldFlash > 0 ? 0.4 : 0);
       g.fillStyle = col;
-      g.fillRect(0, LH - 1, LW, 1);
+      g.fillRect(0, LH - 1, LW, 0.5);
       g.globalAlpha = 1;
     }
 
     // Wall edge flashes in the ball's colour
     g.fillStyle = col;
-    if (flash.L > 0) { g.globalAlpha = flash.L / 0.14; g.fillRect(0, 0, 1, LH); }
-    if (flash.R > 0) { g.globalAlpha = flash.R / 0.14; g.fillRect(LW - 1, 0, 1, LH); }
-    if (flash.T > 0) { g.globalAlpha = flash.T / 0.14; g.fillRect(0, 0, LW, 1); }
+    if (flash.L > 0) { g.globalAlpha = flash.L / 0.14; g.fillRect(0, 0, 0.5, LH); }
+    if (flash.R > 0) { g.globalAlpha = flash.R / 0.14; g.fillRect(LW - 0.5, 0, 0.5, LH); }
+    if (flash.T > 0) { g.globalAlpha = flash.T / 0.14; g.fillRect(0, 0, LW, 0.5); }
     g.globalAlpha = 1;
 
-    // Paddle: grey pixel bevel, flashes in ball colour on hit, recoils, gloss shine
-    var x = Math.round(paddle.x), y = paddle.y + (recoil > 0 ? 1 : 0);
-    var pw = paddle.w;
-    var face = paddleFlash > 0 ? col : PADDLE_COLOR.face;
-    g.fillStyle = '#0b0b12'; g.fillRect(x + 1, y + PADDLE_H, pw - 2, 1);   // shadow
-    g.fillStyle = PADDLE_COLOR.edge; g.fillRect(x, y, pw, PADDLE_H);
-    g.fillStyle = face;              g.fillRect(x + 1, y + 1, pw - 2, PADDLE_H - 2);
-    g.fillStyle = PADDLE_COLOR.hi;   g.fillRect(x + 1, y + 1, pw - 2, 1);
-    g.fillStyle = PADDLE_COLOR.lo;   g.fillRect(x + 1, y + PADDLE_H - 2, pw - 2, 1);
-    if (paddleFlash <= 0) {
-      var shineX = x + 3 + Math.floor((time * 22) % (pw - 8));
-      g.fillStyle = '#eef0f8';
-      g.fillRect(shineX, y + 1, 2, 1);
-    }
-    if (paddle.wideT > 0 && paddle.wideT < 2 && Math.floor(time * 10) % 2) {
-      g.fillStyle = '#ffe27a';                       // warns the wide paddle is ending
-      g.fillRect(x, y - 1, pw, 1);
-    }
+    drawPaddle(col);
 
-    // Ball trail: fading ghost pixels
+    // Ball trail: fading dots that grow toward the ball
     for (var i = 0; i < trail.length; i++) {
-      var tp = trail[i];
+      var tp = trail[i], sz = 0.5 * Math.ceil((i + 1) / trail.length * 4);
       g.globalAlpha = (i + 1) / (trail.length + 2) * 0.5;
       g.fillStyle = col;
-      g.fillRect(Math.round(tp.x) - 1, Math.round(tp.y) - 1, 2, 2);
+      g.fillRect(half(tp.x - sz / 2), half(tp.y - sz / 2), sz, sz);
     }
     g.globalAlpha = 1;
 
-    // Ball: 6x6 pixel blob, corners cut, colour from bounce count, with a highlight
-    var bx = Math.round(ball.x - 3), by = Math.round(ball.y - 3);
-    g.fillStyle = col;
-    g.fillRect(bx + 1, by, 4, 6);
-    g.fillRect(bx, by + 1, 6, 4);
-    g.globalAlpha = 0.6;
-    g.fillStyle = '#ffffff';
-    g.fillRect(bx + 2, by + 2, 2, 2);
-    g.globalAlpha = 1;
+    drawBall();
 
     // HUD
     g.fillStyle = '#8c8ca8';
-    g.font = '8px monospace';
+    g.font = FONT_HUD;
     g.textBaseline = 'top';
     g.textAlign = 'left';
     g.fillText('SCORE ' + score, 4, 4);
@@ -1427,39 +1527,43 @@ CLEAR A LEVEL, THEN CHOOSE YOUR PATH. EVERY SCENE IS DIFFERENT.</p>
     g.fillText('LIVES ' + lives, LW - 4, 4);
     g.textAlign = 'left';
     g.fillStyle = col;
-    g.fillText('BOUNCES ' + ball.bounces, 4, 14);
+    g.fillText('BOUNCES ' + ball.bounces, 4, 13);
     if (combo >= 2 && time - lastBreak < COMBO_WINDOW + 0.4) {
       g.textAlign = 'right';
       g.fillStyle = comboColor;
-      g.fillText('x' + combo + ' COMBO', LW - 4, 14);
+      g.fillText('x' + combo + ' COMBO', LW - 4, 13);
     }
 
     // Overlays
     g.textAlign = 'center';
     g.fillStyle = '#ebebf5';
     if (state === 'intro') {
-      g.fillText('LEVEL ' + level, LW / 2, 112);
+      g.font = FONT_BIG;
+      g.fillText('LEVEL ' + level, LW / 2, 110);
+      g.font = FONT_HUD;
       g.fillStyle = col;
-      g.fillText(levelName, LW / 2, 124);
+      g.fillText(levelName, LW / 2, 123);
       g.fillStyle = '#8c8ca8';
-      g.fillText(run.names.length ? run.names.join(' ') : 'NO BOONS YET', LW / 2, 136);
+      g.fillText(run.names.length ? run.names.join(' ') : 'NO BOONS YET', LW / 2, 134);
     }
     if (state === 'ready') g.fillText('CLICK / SPACE', LW / 2, 112);
     if (state === 'choose') {
-      g.fillStyle = '#07070d';                       // clear the field behind the cards
-      g.fillRect(0, 24, LW, 110);
+      g.fillStyle = 'rgba(6, 6, 12, 0.94)';          // dim the field behind the cards
+      g.fillRect(0, 22, LW, 112);
       g.fillStyle = '#ffe27a';
-      g.fillText('CLEARED  +' + Math.round(100 * level * run.scoreMul), LW / 2, 22);
+      g.fillText('CLEARED  +' + Math.round(100 * level * run.scoreMul), LW / 2, 24);
       for (var ci = 0; ci < choices.length; ci++) drawCard(ci, choices[ci]);
     }
     if (state === 'over') {
-      g.fillText('GAME OVER', LW / 2, 112);
+      g.font = FONT_BIG;
+      g.fillText('GAME OVER', LW / 2, 110);
+      g.font = FONT_HUD;
       g.fillStyle = '#8c8ca8';
       g.fillText('SPACE TO RETRY', LW / 2, 124);
     }
     g.textAlign = 'left';
 
-    g.setTransform(1, 0, 0, 1, 0, 0);
+    g.setTransform(RES, 0, 0, RES, 0, 0);
   }
 
   // ---------- Input ----------
