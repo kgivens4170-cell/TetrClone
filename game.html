@@ -1,0 +1,2079 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>Elemental Break 2.0</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+<style>
+  :root { --bg: #07070d; --ink: #ebebf5; --muted: #8c8ca8; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); }
+  body {
+    font-family: "Press Start 2P", ui-monospace, monospace;
+    display: flex; flex-direction: column; align-items: center; justify-content: flex-start;
+    gap: 14px; padding: 16px; min-height: 100vh;
+    touch-action: none; user-select: none;
+  }
+  h1 { font-size: 14px; margin: 0; letter-spacing: 1px; }
+  #hint { font-size: 8px; color: var(--muted); margin: 0; text-align: center; line-height: 1.8; }
+  #wrap { width: min(100%, 576px); }
+  canvas {
+    display: block; width: 100%; height: auto; aspect-ratio: 192 / 180;
+    background: var(--bg); image-rendering: pixelated; image-rendering: crisp-edges;
+    border: 3px solid #26263d; cursor: none;
+  }
+
+  /* Touch pad under the playfield */
+  #pad { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+  #drag {
+    height: clamp(110px, 34vh, 220px); border: 3px solid #26263d; background: #0c0c15;
+    background-image: radial-gradient(#1c1c2c 1px, transparent 1px);
+    background-size: 12px 12px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 8px; color: var(--muted); text-align: center; line-height: 1.8;
+    touch-action: none;
+  }
+  #btns { display: grid; grid-template-columns: repeat(4, 1fr) 1.8fr; gap: 8px; }
+  #btns button {
+    font-family: inherit; font-size: 12px; height: 52px; color: var(--ink);
+    background: #13131f; border: 3px solid #26263d; touch-action: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+  #btns button.pressed, #btns button:active { background: #26263d; }
+  #btns #launch { font-size: 9px; color: #ffe27a; }
+</style>
+</head>
+<body>
+
+<h1>ELEMENTAL BREAK 2.0</h1>
+<div id="wrap">
+  <canvas id="c" width="192" height="180"></canvas>
+  <div id="pad">
+    <div id="drag">DRAG TO MOVE<br>TAP TO LAUNCH</div>
+    <div id="btns">
+      <button type="button" data-key="ArrowLeft" aria-label="Left">◀</button>
+      <button type="button" data-key="ArrowUp" aria-label="Up">▲</button>
+      <button type="button" data-key="ArrowDown" aria-label="Down">▼</button>
+      <button type="button" data-key="ArrowRight" aria-label="Right">▶</button>
+      <button type="button" id="launch" aria-label="Launch">LAUNCH</button>
+    </div>
+  </div>
+</div>
+<p id="hint">MOVE: MOUSE / TOUCH PAD / ← → ↑ ↓ (W S) &nbsp; LAUNCH: CLICK / SPACE<br>
+CLEAR A LEVEL, THEN CHOOSE YOUR PATH. EVERY SCENE IS DIFFERENT.</p>
+
+<script src="brick-palettes.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  var BP = window.BrickPalettes;
+  var PAL = BP.PALETTES;
+  var BW = BP.W, BH = BP.H;             // logical brick size; drawn at scale s
+
+  var LW = 192, LH = 180;               // logical resolution
+  var GAP_X = 1, GAP_Y = 1;
+  var BRICK_Y0 = 30;                    // top of the brick field
+  var BRICK_BOTTOM = 112;               // bricks never go below this
+
+  var PADDLE_W = 32, PADDLE_WIDE = 48, PADDLE_H = 4;
+  var PADDLE_BASE_Y = LH - 14;          // resting height of the paddle
+  var PADDLE_TOP_Y = PADDLE_BASE_Y - 30; // highest the paddle can rise
+  var PADDLE_COLOR = { face: '#8d8fa0', hi: '#c8cad6', lo: '#4c4e5c', edge: '#22232b' };
+  var BASE_SPEED = 96;                  // logical px per second, level 1
+  var BALL_R = 3;                       // ball is 6x6 pixels
+  var TAU = Math.PI * 2;
+  var COMBO_WINDOW = 1.2;               // seconds between breaks to keep a combo
+  var INTRO_T = 1.8;
+
+  // The run: 5 stages of 5 levels each
+  var LEVELS_PER_STAGE = 5, STAGES = 5, TOTAL_LEVELS = LEVELS_PER_STAGE * STAGES;
+  // Most steel pieces allowed per level, by stage: none in stage 1, then a few more each stage
+  var STEEL_BY_STAGE = [0, 2, 3, 4, 5];
+  function stageOf(n) { return Math.floor((n - 1) / LEVELS_PER_STAGE) + 1; }
+  function levelInStage(n) { return (n - 1) % LEVELS_PER_STAGE + 1; }
+  var PICKUP_CHANCE = 0.12, WIDE_TIME = 8;
+
+  // Path cards shown after each cleared level
+  var CARD_X0 = 4, CARD_Y = 38, CARD_W = 58, CARD_H = 92, CARD_GAP = 5;
+
+  // Ball colour climbs through these stops as it bounces.
+  var BOUNCE_STOPS = ['#ffffff', '#ffe27a', '#ff9a2a', '#ff3a6d', '#c040ff'];
+  var BOUNCE_FULL = 60;                 // bounces to reach the last stop
+
+  // Brick characters in level grids:
+  //   '0'-'7'  normal brick of that element (0 fire, 1 water, 2 grass, 3 lightning,
+  //            4 ice, 5 air, 6 rock, 7 shadow)
+  //   'a'-'h'  hard brick (two hits) of element 0-7 (letter = 'a' + element)
+  //   'S'      steel (indestructible, bounces the ball)
+  //   '.'      empty
+
+  // ---------- Grid helpers ----------
+  function blank(C, R) {
+    var g = [];
+    for (var r = 0; r < R; r++) {
+      var row = [];
+      for (var c = 0; c < C; c++) row.push('.');
+      g.push(row);
+    }
+    return g;
+  }
+
+  function put(g, r, c, ch) {
+    if (r >= 0 && r < g.length && c >= 0 && c < g[0].length) g[r][c] = ch;
+  }
+
+  function at(g, r, c) {
+    return (r >= 0 && r < g.length && c >= 0 && c < g[0].length) ? g[r][c] : null;
+  }
+
+  function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+  function randInt(lo, hi) { return lo + Math.floor(Math.random() * (hi - lo + 1)); }
+
+  function chance(p) { return Math.random() < p; }
+
+  // Pick one of the given characters at random
+  function pick(list) { return list[Math.floor(Math.random() * list.length)]; }
+
+  // Hard brick letter for element e (0-7)
+  function hardOf(e) { return String.fromCharCode(97 + e); }
+
+  // ---------- Scenes: silhouettes built from the elements ----------
+  // Each scene paints a recognisable shape. key: the elements it is built from.
+  var BIOMES = [
+    { name: 'WATERFALL', key: ['1', '6', '2'], gen: function (C, R) {
+        // A canyon of rock with grass caps; a waterfall pours down the middle into a pool
+        var g = blank(C, R), cx = (C - 1) / 2;
+        var half = chance(0.5) ? 0 : 1;                       // water column half-width
+        for (var r = 0; r < R; r++) for (var c = 0; c < C; c++) {
+          var d = Math.abs(c - cx);
+          if (d <= half) put(g, r, c, '1');
+          else if (d <= half + 1.5) put(g, r, c, r === 0 ? '2' : 'S');       // steel cliff faces
+          else if (d <= (C - 1) / 2 + 0.5) put(g, r, c, r === 0 ? '2' : (chance(0.7) ? '6' : 'S'));
+        }
+        for (var c2 = 0; c2 < C; c2++) {
+          if (Math.abs(c2 - cx) <= half + 1) put(g, R - 1, c2, '1');   // splash pool
+          else put(g, R - 1, c2, '6');
+        }
+        return g;
+    } },
+    { name: 'VOLCANO', key: ['0', '6', '7'], gen: function (C, R) {
+        // A cone with a lava core and an open crater at the top, smoke above
+        var g = blank(C, R), cx = (C - 1) / 2;
+        for (var r = 0; r < R; r++) {
+          var w = R > 1 ? (r / (R - 1)) * (C / 2) : 0;        // slope widens toward the base
+          for (var c = 0; c < C; c++) {
+            var d = Math.abs(c - cx);
+            if (d <= w * 0.45) put(g, r, c, '0');
+            else if (d <= w) put(g, r, c, chance(0.25) ? 'S' : '6');
+            else if (r === 0 && chance(0.4)) put(g, r, c, '7');
+          }
+        }
+        for (var c2 = 0; c2 < C; c2++) put(g, R - 1, c2, '6');
+        return g;
+    } },
+    { name: 'DESERT', key: ['0', '6', '2'], gen: function (C, R) {
+        // A fiery sun in the corner, rolling rock dunes, and a grass cactus
+        var g = blank(C, R), sunC = C - 1, rad = Math.max(1.2, C / 4);
+        for (var r = 0; r < R; r++) for (var c = 0; c < C; c++) {
+          if ((c - sunC) * (c - sunC) + r * r <= rad * rad) put(g, r, c, '0');
+        }
+        var f = 0.6 + Math.random() * 0.6, ph = Math.random() * TAU;
+        var top = [];
+        for (var c2 = 0; c2 < C; c2++) {
+          var h = Math.max(1, R - 2 + Math.round(Math.sin(c2 * f + ph) * 0.8));
+          top.push(h);
+          for (var r2 = h; r2 < R; r2++) put(g, r2, c2, '6');
+        }
+        if (C >= 3) {
+          var cc = randInt(1, C - 2), ch2 = top[cc];
+          for (var r3 = ch2 - 1; r3 >= Math.max(0, ch2 - 3); r3--) put(g, r3, cc, '2');
+          var side = chance(0.5) ? cc - 1 : cc + 1;
+          if (ch2 - 2 >= 0) put(g, ch2 - 2, side, '2');
+        }
+        return g;
+    } },
+    { name: 'SKY ISLANDS', key: ['5', '6', '2'], gen: function (C, R) {
+        // Floating rock islands with grass tops, hanging roots, drifting air
+        var g = blank(C, R);
+        for (var r = 0; r < R; r++) for (var c = 0; c < C; c++) if (chance(0.15)) put(g, r, c, '5');
+        var hw = C >= 9 ? 2 : 1;
+        var islands = C >= 9 ? randInt(1, 2) : 1;
+        for (var i = 0; i < islands; i++) {
+          var ic = randInt(hw, C - 1 - hw), ir = randInt(1, Math.max(1, R - 4));
+          for (var k = 0; k < 3; k++) {                       // tapering island body
+            for (var dc = -(hw - k); dc <= hw - k; dc++) put(g, ir + k, ic + dc, '6');
+          }
+          for (var dc2 = -hw; dc2 <= hw; dc2++) if (chance(0.8)) put(g, ir - 1, ic + dc2, '2');
+          if (ir + 3 < R) put(g, ir + 3, ic, 'g');            // hard rock root
+        }
+        return g;
+    } },
+    { name: 'FOREST', key: ['2', '6', '2'], gen: function (C, R) {
+        // Round canopies of leaves on rock trunks, a grassy floor
+        var g = blank(C, R), canopyR = Math.max(0, Math.min(1, R - 3));
+        for (var c0 = randInt(0, 1); c0 < C; c0 += 3) {
+          for (var dr = -1; dr <= 1; dr++) for (var dc = -2; dc <= 2; dc++) {
+            if (dr * dr + dc * dc / 2.25 <= 1.6) put(g, canopyR + dr, c0 + dc, chance(0.2) ? 'c' : '2');
+          }
+          for (var r = canopyR + 2; r < R - 1; r++) put(g, r, c0, '6');
+        }
+        for (var c2 = 0; c2 < C; c2++) put(g, R - 1, c2, chance(0.7) ? '2' : '6');
+        return g;
+    } },
+    { name: 'MOUNTAINS', key: ['4', '6', 'S'], gen: function (C, R) {
+        // Two peaks with ice caps over a rock body and steel bedrock
+        var g = blank(C, R), hw = Math.max(1.5, C * 0.45);
+        var p1 = C * 0.3 + Math.random() - 0.5, p2 = C * 0.7 + Math.random() - 0.5;
+        for (var c = 0; c < C; c++) {
+          var hgt = Math.round((R - 1) * Math.max(
+            Math.max(0, 1 - Math.abs(c - p1) / hw),
+            Math.max(0, 1 - Math.abs(c - p2) / hw)));
+          for (var r = R - hgt; r < R; r++) {
+            if (r < 0) continue;
+            if (r === R - hgt) put(g, r, c, hgt >= 2 ? '4' : '6');   // ice cap at the peak
+            else put(g, r, c, chance(0.12) ? 'S' : '6');
+          }
+        }
+        return g;
+    } },
+    { name: 'STORM', key: ['7', '3', '1'], gen: function (C, R) {
+        // A dark cloud, a lightning bolt, rain, and a puddle
+        var g = blank(C, R);
+        for (var r = 0; r < Math.min(2, R - 1); r++) for (var c = 0; c < C; c++) {
+          if (chance(0.8)) put(g, r, c, '7');
+          else if (chance(0.3)) put(g, r, c, '5');
+        }
+        var cb = randInt(1, Math.max(1, C - 2));
+        for (var r2 = 2; r2 < R - 1; r2++) {
+          var bc = clamp(cb + (r2 % 2 ? 0 : (chance(0.5) ? 1 : -1)), 0, C - 1);
+          put(g, r2, bc, chance(0.3) ? 'd' : '3');              // hard bolt pieces sometimes
+        }
+        for (var r3 = 2; r3 < R - 1; r3++) for (var c3 = 0; c3 < C; c3++) {
+          if (at(g, r3, c3) === '.' && chance(0.12)) put(g, r3, c3, '1');   // rain
+        }
+        for (var c4 = 0; c4 < C; c4++) put(g, R - 1, c4, (c4 === 0 || c4 === C - 1) ? '6' : '1');
+        return g;
+    } },
+    { name: 'CRYSTAL', key: ['4', '7', 'S'], gen: function (C, R) {
+        // A steel-walled cave with ice spikes hanging and rising
+        var g = blank(C, R);
+        for (var r = 0; r < R; r++) for (var c = 0; c < C; c++) {
+          if (r === 0 || r === R - 1 || c === 0 || c === C - 1) put(g, r, c, 'S');
+          else if (chance(0.25)) put(g, r, c, '7');
+        }
+        for (var c2 = 1; c2 < C - 1; c2++) {
+          if (chance(0.5)) {                                    // spike hanging from the ceiling
+            put(g, 1, c2, '4');
+            if (R > 3 && chance(0.5)) put(g, 2, c2, 'e');
+          }
+          if (chance(0.4) && R > 2) {                           // spike rising from the floor
+            put(g, R - 2, c2, '4');
+            if (R > 3 && chance(0.4)) put(g, R - 3, c2, 'e');
+          }
+        }
+        return g;
+    } },
+    { name: 'SWAMP', key: ['2', '1', '6'], gen: function (C, R) {
+        // Murky water at the bottom, reeds rising out of it, a rock mound with roots
+        var g = blank(C, R), cx = Math.floor((C - 1) / 2);
+        for (var c = 0; c < C; c++) {
+          put(g, R - 1, c, '1');
+          if (R > 2) put(g, R - 2, c, chance(0.6) ? '1' : '2');
+        }
+        if (R >= 4) {
+          for (var m = -1; m <= 1; m++) put(g, R - 3, cx + m, chance(0.5) ? 'g' : '6');
+        }
+        for (var c2 = 0; c2 < C; c2++) {
+          if (R >= 4 && at(g, R - 3, c2) === '.' && chance(0.35)) {
+            put(g, R - 3, c2, '2');
+            if (R >= 5) put(g, R - 4, c2, '2');
+          }
+        }
+        return g;
+    } },
+    { name: 'ARCANE', key: ['7', '4', '7'], gen: function (C, R) {
+        // Concentric shadow and ice rings around a hard rune cross
+        var g = blank(C, R), cx = (C - 1) / 2, cy = (R - 1) / 2;
+        for (var r = 0; r < R; r++) for (var c = 0; c < C; c++) {
+          var d = Math.sqrt(Math.pow((c - cx) / 1.5, 2) + Math.pow(r - cy, 2));
+          var ring = Math.floor(d) % 3;
+          if (ring === 0) put(g, r, c, '7');
+          else if (ring === 1 && chance(0.8)) put(g, r, c, '4');
+        }
+        var mx = Math.round(cx), my = Math.round(cy);
+        put(g, my, mx, 'h'); put(g, my - 1, mx, 'h'); put(g, my + 1, mx, 'h');
+        put(g, my, mx - 1, 'h'); put(g, my, mx + 1, 'h');
+        return g;
+    } },
+    { name: 'BAMBOO', key: ['2', '1', '2'], gen: function (C, R) {
+        // Tall grass stalks with knots, water between them, leaves at the joints
+        var g = blank(C, R);
+        for (var c = 0; c < C; c++) {
+          if (c % 2 === 0) {
+            for (var r = 0; r < R; r++) put(g, r, c, r % 3 === 2 ? 'c' : '2');
+          } else {
+            for (var r2 = 0; r2 < R; r2++) if (chance(0.15)) put(g, r2, c, '1');
+          }
+        }
+        for (var r3 = 0; r3 < R; r3++) for (var c3 = 0; c3 < C; c3 += 2) {
+          if (chance(0.3)) { if (at(g, r3, c3 - 1) === '.') put(g, r3, c3 - 1, '2'); if (at(g, r3, c3 + 1) === '.') put(g, r3, c3 + 1, '2'); }
+        }
+        return g;
+    } },
+    { name: 'RIVER', key: ['1', 'S', '2'], gen: function (C, R) {
+        // A winding channel with steel banks, grassy shores and stones
+        var g = blank(C, R), amp = C * 0.2, f = 0.5 + Math.random() * 0.6, ph = Math.random() * TAU;
+        var cen = (C - 1) / 2;
+        for (var r = 0; r < R; r++) for (var c = 0; c < C; c++) {
+          var centre = cen + amp * Math.sin(r * f + ph);
+          var d = Math.abs(c - centre);
+          if (d <= 0.9) put(g, r, c, chance(0.1) ? 'g' : '1');
+          else if (d <= 1.9) put(g, r, c, 'S');
+          else if (d <= 3) { if (chance(0.85)) put(g, r, c, '2'); }
+          else if (chance(0.25)) put(g, r, c, '6');
+        }
+        return g;
+    } },
+    { name: 'METEOR', key: ['0', '6', 'S'], gen: function (C, R) {
+        // A crater of rock with a steel rim, a fiery core, and a streak of fire
+        var g = blank(C, R), cx = (C - 1) / 2, cy = R - 1, rad = Math.max(1.2, C / 3.2);
+        for (var r = 0; r < R; r++) for (var c = 0; c < C; c++) {
+          var d = Math.sqrt(Math.pow(c - cx, 2) + Math.pow((r - cy) * 1.6, 2));
+          if (Math.abs(d - rad) < 0.7) put(g, r, c, 'S');
+          else if (d < rad - 0.7) put(g, r, c, d < 1.0 ? '0' : '6');
+        }
+        for (var k = 0; k < R; k++) {
+          var sc = C - 1 - k;
+          if (sc >= 0 && at(g, k, sc) === '.') put(g, k, sc, '0');
+        }
+        return g;
+    } }
+  ];
+
+  // Surprises: about a third of levels get one of these on top of the scene
+  var SURPRISES = [
+    function (g, C, R) {                                    // steel gate across the middle
+      var r = Math.floor(R / 2), gap = randInt(0, C - 1);
+      for (var c = 0; c < C; c++) if (c !== gap) put(g, r, c, 'S');
+    },
+    function (g, C, R) {                                    // treasure: a 2x2 cluster of hard bricks
+      var letter = hardOf(randInt(0, 7)), r0 = randInt(0, Math.max(0, R - 2)), c0 = randInt(0, Math.max(0, C - 2));
+      for (var dr = 0; dr < 2; dr++) for (var dc = 0; dc < 2; dc++) put(g, r0 + dr, c0 + dc, letter);
+    },
+    function (g, C, R) {                                    // loose bricks of random elements
+      for (var r = 0; r < R; r++) for (var c = 0; c < C; c++) {
+        if (at(g, r, c) === '.' && chance(0.15)) put(g, r, c, String(randInt(0, 7)));
+      }
+    },
+    function (g, C, R) {                                    // two steel pillars, bottom row kept open
+      var c1 = randInt(0, C - 1), c2 = randInt(0, C - 1);
+      for (var r = 0; r < R - 1; r++) { put(g, r, c1, 'S'); put(g, r, c2, 'S'); }
+    }
+  ];
+
+  function breakableCount(g) {
+    var n = 0;
+    for (var r = 0; r < g.length; r++) for (var c = 0; c < g[r].length; c++) {
+      if (g[r][c] !== '.' && g[r][c] !== 'S') n++;
+    }
+    return n;
+  }
+
+  // Units per sprite pixel: big 32x14 bricks for stage 1, then 16x7
+  function scaleFor(n) { return n <= LEVELS_PER_STAGE ? 1 : 0.5; }
+  function cellWFor(s) { return BW * s + GAP_X; }
+  function cellHFor(s) { return BH * s + GAP_Y; }
+  function colsFor(s) { return Math.floor((LW + GAP_X) / cellWFor(s)); }
+  function maxRowsFor(s) { return Math.floor((BRICK_BOTTOM - BRICK_Y0 + GAP_Y) / cellHFor(s)); }
+
+  // Where can the ball get to? Flood fill through empty and breakable cells
+  // (breakable ones count as open, since the ball can break through them).
+  // The space below the grid is always open. The space above it is open if the
+  // ball can get there: through the grid, or down the sides when there's room.
+  function reachable(g, C, R, sidesOpen) {
+    var seen = [], queue = [], topOpen = false;
+    for (var r = 0; r < R; r++) { seen.push([]); for (var c = 0; c < C; c++) seen[r].push(false); }
+    function seed(r, c) {
+      if (g[r][c] !== 'S' && !seen[r][c]) { seen[r][c] = true; queue.push([r, c]); }
+    }
+    function openTop() {
+      if (topOpen) return;
+      topOpen = true;
+      for (var c = 0; c < C; c++) seed(0, c);
+    }
+    for (var c0 = 0; c0 < C; c0++) seed(R - 1, c0);
+    if (sidesOpen) {
+      openTop();
+      for (var r0 = 0; r0 < R; r0++) { seed(r0, 0); seed(r0, C - 1); }
+    }
+    while (queue.length) {
+      var cell = queue.shift(), cr = cell[0], cc = cell[1];
+      if (cr === 0) openTop();
+      if (cr > 0) seed(cr - 1, cc);
+      if (cr < R - 1) seed(cr + 1, cc);
+      if (cc > 0) seed(cr, cc - 1);
+      if (cc < C - 1) seed(cr, cc + 1);
+    }
+    return { seen: seen, topOpen: topOpen };
+  }
+
+  // Steel must never seal breakable bricks away from the ball, or the level can't be won.
+  // While any breakable brick is unreachable, turn one steel cell into a hard rock brick:
+  // preferably one that sits between the sealed pocket and the open area (a doorway).
+  function openSealedPockets(g, C, R, sidesOpen) {
+    for (var guard = 0; guard < C * R; guard++) {
+      var res = reachable(g, C, R, sidesOpen), seen = res.seen;
+
+      var sealed = false;
+      for (var r = 0; r < R && !sealed; r++) for (var c = 0; c < C; c++) {
+        var ch = g[r][c];
+        if (ch !== '.' && ch !== 'S' && !seen[r][c]) { sealed = true; break; }
+      }
+      if (!sealed) return;
+
+      var door = null, fallback = null;
+      for (var r2 = 0; r2 < R && !door; r2++) for (var c2 = 0; c2 < C; c2++) {
+        if (g[r2][c2] !== 'S') continue;
+        var touchesSealed = false, touchesOpen = false;
+        var nbrs = [[r2 - 1, c2], [r2 + 1, c2], [r2, c2 - 1], [r2, c2 + 1]];
+        for (var i = 0; i < 4; i++) {
+          var nr = nbrs[i][0], nc = nbrs[i][1];
+          if (nr >= 0 && nr < R && nc >= 0 && nc < C) {
+            if (g[nr][nc] === 'S') continue;
+            if (seen[nr][nc]) touchesOpen = true; else touchesSealed = true;
+          } else if (nr >= R || (nr < 0 && res.topOpen) || ((nc < 0 || nc >= C) && sidesOpen)) {
+            touchesOpen = true;                       // open space around the grid
+          }
+        }
+        if (touchesSealed && touchesOpen) { door = [r2, c2]; break; }
+        if (touchesSealed && !fallback) fallback = [r2, c2];
+      }
+      var pickCell = door || fallback;
+      if (!pickCell) return;                          // nothing left to open
+      g[pickCell[0]][pickCell[1]] = 'g';              // hard rock brick instead of steel
+    }
+  }
+
+  // Keep at most `max` steel pieces; the rest become hard rock so the scene keeps its shape
+  function limitSteel(g, C, R, max) {
+    var cells = [];
+    for (var r = 0; r < R; r++) for (var c = 0; c < C; c++) if (g[r][c] === 'S') cells.push([r, c]);
+    for (var i = cells.length - 1; i > 0; i--) {          // shuffle, then keep the first `max`
+      var j = Math.floor(Math.random() * (i + 1)), t = cells[i]; cells[i] = cells[j]; cells[j] = t;
+    }
+    for (var k = max; k < cells.length; k++) g[cells[k][0]][cells[k][1]] = 'g';
+  }
+
+  // Build the grid for a scene at level n, add a surprise sometimes,
+  // then make some bricks hard as the run goes on.
+  function generateLevel(n, s, biome) {
+    var C = colsFor(s), maxR = maxRowsFor(s);
+    var R = Math.min(maxR, 3 + Math.floor(n / 3));
+    var g, tries = 0;
+    do {
+      g = biome.gen(C, R);
+      tries++;
+    } while (breakableCount(g) < 6 && tries < 10);
+
+    if (chance(0.35)) pick(SURPRISES)(g, C, R);
+
+    limitSteel(g, C, R, STEEL_BY_STAGE[Math.min(STEEL_BY_STAGE.length - 1, Math.floor((n - 1) / LEVELS_PER_STAGE))]);
+
+    // The ball fits down the sides of the grid only when the margin is wide enough
+    var margin = (LW - (C * cellWFor(s) - GAP_X)) / 2;
+    openSealedPockets(g, C, R, margin >= BALL_R * 2 + 1);
+
+    var pHard = n >= 2 ? Math.min(0.45, 0.05 + 0.03 * n) : 0;
+    var rows = [];
+    for (var r = 0; r < R; r++) {
+      var str = '';
+      for (var c = 0; c < C; c++) {
+        var ch = g[r][c];
+        if (ch === '.' || ch === 'S' || (ch >= 'a' && ch <= 'h')) str += ch;
+        else if (chance(pHard)) str += hardOf(parseInt(ch, 10));
+        else str += ch;
+      }
+      rows.push(str);
+    }
+    return { name: biome.name, cols: C, rows: rows };
+  }
+
+  // ---------- Roguelite boons: picked on the path cards ----------
+  var BOONS = [
+    { name: 'SWIFT', lines: ['BALL', '+12% SPEED'], apply: function (run) { run.speedMul *= 1.12; } },
+    { name: 'HEAVY', lines: ['SCORE', 'x1.5'], apply: function (run) { run.scoreMul *= 1.5; } },
+    { name: 'SHIELD', lines: ['ONE FREE', 'FLOOR SAVE'], apply: function (run) { run.shields += 1; } },
+    { name: 'GOLDEN', lines: ['MORE', 'GOLD DROPS'], apply: function (run) { run.dropBonus += 0.15; } },
+    { name: 'VITALITY', lines: ['+1 LIFE', ''], apply: function (run) { run.lifeBonus += 1; } },
+    { name: 'WIDE', lines: ['WIDE', 'PADDLE'], apply: function (run) { run.wideStart = true; } }
+  ];
+
+  // ---------- Audio: synthesised with Web Audio, no sound files ----------
+  var AC = null, MASTER = null;
+  var PAN = 0;                          // stereo position for the next sounds, -1..1
+
+  function audio() {
+    if (!AC) {
+      try {
+        AC = new (window.AudioContext || window.webkitAudioContext)();
+        MASTER = AC.createGain();
+        MASTER.gain.value = 0.35;
+        MASTER.connect(AC.destination);
+      } catch (e) { AC = null; }
+    }
+    if (AC && AC.state === 'suspended') AC.resume();
+    return AC;
+  }
+
+  // Output node for a sound: a stereo panner at PAN when supported.
+  function outNode(ac) {
+    if (!ac.createStereoPanner || PAN === 0) return MASTER;
+    var p = ac.createStereoPanner();
+    p.pan.value = PAN;
+    p.connect(MASTER);
+    return p;
+  }
+
+  function tone(f, dur, type, vol, slideTo, delay) {
+    var ac = audio(); if (!ac) return;
+    var t0 = ac.currentTime + (delay || 0);
+    var o = ac.createOscillator(), gn = ac.createGain();
+    o.type = type || 'sine';
+    o.frequency.setValueAtTime(f, t0);
+    if (slideTo) o.frequency.exponentialRampToValueAtTime(slideTo, t0 + dur);
+    gn.gain.setValueAtTime(vol, t0);
+    gn.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    o.connect(gn); gn.connect(outNode(ac));
+    o.start(t0); o.stop(t0 + dur + 0.05);
+  }
+
+  function noise(dur, vol, ftype, f0, f1, q, delay) {
+    var ac = audio(); if (!ac) return;
+    var t0 = ac.currentTime + (delay || 0);
+    var len = Math.max(1, Math.floor(ac.sampleRate * dur));
+    var buf = ac.createBuffer(1, len, ac.sampleRate), d = buf.getChannelData(0);
+    for (var i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+    var src = ac.createBufferSource(); src.buffer = buf;
+    var flt = ac.createBiquadFilter();
+    flt.type = ftype || 'bandpass';
+    flt.frequency.setValueAtTime(f0, t0);
+    if (f1) flt.frequency.exponentialRampToValueAtTime(f1, t0 + dur);
+    flt.Q.value = q || 1;
+    var gn = ac.createGain();
+    gn.gain.setValueAtTime(vol, t0);
+    gn.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    src.connect(flt); flt.connect(gn); gn.connect(outNode(ac));
+    src.start(t0); src.stop(t0 + dur + 0.05);
+  }
+
+  // Pitch rises as the ball gets hotter, so long rallies sing higher.
+  function pitchMul() {
+    return 1 + Math.min(ball.bounces, BOUNCE_FULL) / BOUNCE_FULL * 0.6;
+  }
+
+  function panFor(x) {
+    return Math.max(-0.8, Math.min(0.8, (x / LW) * 2 - 1));
+  }
+
+  function sfxWall(x) {
+    var m = pitchMul();
+    PAN = panFor(x);
+    tone(1600 * m, 0.035, 'square', 0.05, 900 * m);
+    noise(0.02, 0.09, 'highpass', 5000, 5000, 1);
+    PAN = 0;
+  }
+
+  function sfxPaddle(hit) {
+    var m = pitchMul();
+    var f = 380 * m * (1 + hit * 0.25);   // hitting the paddle's edge raises the note
+    PAN = panFor(ball.x);
+    tone(f, 0.16, 'triangle', 0.3, f * 1.6);
+    tone(f * 2.01, 0.1, 'sine', 0.1, null, 0.01);
+    noise(0.03, 0.15, 'bandpass', 3000, 1500, 2);
+    PAN = 0;
+  }
+
+  // Hard brick: a glassy tink on each hit that doesn't break it.
+  function sfxTink(x) {
+    var m = pitchMul();
+    PAN = panFor(x);
+    tone(1250 * m, 0.07, 'triangle', 0.2, 900 * m);
+    noise(0.02, 0.1, 'highpass', 7000, 7000, 1);
+    PAN = 0;
+  }
+
+  // Steel: a heavy metallic clank.
+  function sfxClank(x) {
+    var m = pitchMul();
+    PAN = panFor(x);
+    tone(880 * m, 0.14, 'square', 0.08, 600 * m);
+    tone(1320 * m, 0.1, 'triangle', 0.06, null, 0.01);
+    noise(0.03, 0.22, 'bandpass', 2500, 1200, 2);
+    PAN = 0;
+  }
+
+  // One break sound per element. p is a small random pitch factor per break.
+  var SOUNDS = {
+    ember: function (p) {                       // crackle and a falling thump
+      noise(0.22, 0.5, 'bandpass', 2400 * p, 500 * p, 0.9);
+      tone(280 * p, 0.3, 'triangle', 0.22, 85 * p);
+      noise(0.05, 0.25, 'highpass', 4000, 3000, 1, 0.06);
+      noise(0.05, 0.2, 'highpass', 4000, 3000, 1, 0.12);
+    },
+    wave: function (p) {                        // rising bloop and a splash
+      tone(520 * p, 0.14, 'sine', 0.28, 1400 * p);
+      tone(980 * p, 0.12, 'sine', 0.2, 1900 * p, 0.06);
+      noise(0.16, 0.12, 'bandpass', 3200, 900, 2);
+    },
+    bubble: function (p) {                      // wet pop
+      tone(460 * p, 0.09, 'sine', 0.32, 120 * p);
+      tone(760 * p, 0.2, 'sine', 0.2, 260 * p, 0.05);
+    },
+    thunder: function (p) {                     // electric crack and a zap
+      noise(0.14, 0.9, 'highpass', 2500, 600, 0.5);
+      tone(1800 * p, 0.2, 'square', 0.1, 220 * p);
+      tone(70 * p, 0.28, 'sine', 0.35, 34 * p, 0.02);
+    },
+    glacier: function (p) {                     // glass chime
+      tone(2093 * p, 0.5, 'sine', 0.18);
+      tone(2794 * p, 0.6, 'sine', 0.12, null, 0.05);
+      tone(3520 * p, 0.7, 'sine', 0.07, null, 0.1);
+    },
+    gale: function (p) {                        // whoosh
+      noise(0.5, 0.45, 'bandpass', 350 * p, 2600 * p, 1.4);
+      tone(1200 * p, 0.25, 'sine', 0.05, 2000 * p, 0.05);
+    },
+    terra: function (p) {                       // rock crunch and a deep thud
+      noise(0.24, 0.75, 'lowpass', 900 * p, 150, 1);
+      tone(110 * p, 0.26, 'sine', 0.42, 45 * p);
+      noise(0.12, 0.4, 'bandpass', 1800, 600, 3, 0.02);
+    },
+    void: function (p) {                        // sub drop and a shimmer
+      tone(70 * p, 0.6, 'sine', 0.5, 28 * p);
+      tone(880 * p, 0.5, 'sine', 0.08, 1320 * p, 0.05);
+      tone(1320 * p, 0.4, 'triangle', 0.05, 660 * p, 0.1);
+    }
+  };
+
+  function sfxBreak(fx, x, mul) {
+    var fn = SOUNDS[fx];
+    PAN = panFor(x);
+    if (fn) fn((0.94 + Math.random() * 0.12) * mul);
+    noise(0.04, 0.2, 'highpass', 6000, 3000, 1);   // shared crunch layer
+    PAN = 0;
+  }
+
+  function sfxLaunch() {
+    tone(300, 0.25, 'triangle', 0.2, 900);
+    noise(0.25, 0.15, 'bandpass', 500, 2500, 1);
+  }
+
+  function sfxIntro() {
+    tone(330, 0.15, 'triangle', 0.18);
+    tone(440, 0.2, 'triangle', 0.18, null, 0.12);
+    tone(660, 0.25, 'triangle', 0.16, null, 0.24);
+  }
+
+  function sfxLoss() {
+    tone(440, 0.7, 'sawtooth', 0.12, 70);
+    tone(330, 0.7, 'triangle', 0.15, 55, 0.1);
+  }
+
+  function sfxOver() {
+    tone(220, 1.2, 'triangle', 0.2, 55);
+    tone(261.6, 1.2, 'triangle', 0.12, 65, 0.15);
+  }
+
+  function sfxClear() {
+    var notes = [523, 659, 784, 1047];
+    for (var i = 0; i < notes.length; i++) tone(notes[i], 0.22, 'triangle', 0.2, null, i * 0.09);
+  }
+
+  function sfxPower() {
+    tone(523, 0.1, 'square', 0.12);
+    tone(784, 0.1, 'square', 0.12, null, 0.08);
+    tone(1046, 0.18, 'square', 0.12, null, 0.16);
+  }
+
+  function sfxPick() {
+    tone(660, 0.08, 'triangle', 0.2);
+    tone(990, 0.12, 'triangle', 0.2, null, 0.07);
+  }
+
+  function sfxBossHit(fx) {
+    tone(110, 0.25, 'sawtooth', 0.22, 45);
+    noise(0.14, 0.45, 'lowpass', 1400, 250, 1);
+    var fn = SOUNDS[fx]; if (fn) fn(0.7);
+  }
+
+  function sfxBossShoot() {
+    tone(520, 0.18, 'square', 0.06, 180);
+    noise(0.08, 0.1, 'bandpass', 1800, 600, 2);
+  }
+
+  function sfxStun() {
+    tone(240, 0.35, 'square', 0.1, 70);
+    noise(0.2, 0.25, 'highpass', 3000, 900, 1);
+  }
+
+  function sfxBossRoar() {
+    tone(70, 0.9, 'sawtooth', 0.22, 38);
+    tone(105, 0.9, 'square', 0.06, 50, 0.05);
+    noise(0.8, 0.3, 'lowpass', 600, 120, 1);
+  }
+
+  function sfxBoom() {
+    tone(80 + Math.random() * 40, 0.3, 'sine', 0.35, 35);
+    noise(0.25, 0.4, 'lowpass', 1600, 200, 1);
+  }
+
+  function sfxShield() {
+    tone(180, 0.3, 'sine', 0.3, 420);
+    noise(0.15, 0.2, 'bandpass', 1500, 800, 1);
+  }
+
+  // ---------- Game state ----------
+  var cv = document.getElementById('c');
+  var g = cv.getContext('2d');
+  g.imageSmoothingEnabled = false;
+
+  // Render at the screen's real resolution. The game keeps its 192x180 logical
+  // units, but each unit is drawn as RES x RES device pixels, so the fine detail
+  // (half-unit particles, the ball's shading, text, brick sprites) stays sharp.
+  var RES = 4;
+  function fitCanvas() {
+    var cssW = cv.getBoundingClientRect().width || LW * 3;
+    var dpr = window.devicePixelRatio || 1;
+    var res = clamp(Math.round(cssW * dpr / LW), 2, 8);
+    if (res !== RES || cv.width !== LW * res) {
+      RES = res;
+      cv.width = LW * RES;
+      cv.height = LH * RES;
+      g.imageSmoothingEnabled = false;
+    }
+  }
+  fitCanvas();
+  window.addEventListener('resize', fitCanvas);
+
+  var FONT_BIG = '8px "Press Start 2P", monospace';
+  var FONT_HUD = '6px "Press Start 2P", monospace';
+  var FONT_CARD = '5px "Press Start 2P", monospace';
+  if (document.fonts && document.fonts.load) document.fonts.load(FONT_BIG);
+
+  // A faint starfield behind the play area
+  var STARS = [];
+  for (var si = 0; si < 46; si++) {
+    STARS.push({ x: Math.random() * LW, y: Math.random() * LH, p: Math.random() * TAU, b: Math.random() });
+  }
+
+  var state, bricks, ball, paddle, lives, score, time, particles, keys, pointerX;
+  var trail, flash, paddleFlash, recoil, shake, combo, lastBreak, comboColor;
+  var level, stateT, curSpeed, pickups, paddleDY, levelName, padDX, padDY;
+  var run, pendingBiome, choices, boonNote, shieldFlash, clearBonus = 0;
+
+  function hexToRgb(h) {
+    return [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
+  }
+
+  function mixRGB(a, b, f) {
+    return [Math.round(a[0] + (b[0] - a[0]) * f), Math.round(a[1] + (b[1] - a[1]) * f), Math.round(a[2] + (b[2] - a[2]) * f)];
+  }
+
+  function rgbStr(c) { return 'rgb(' + c[0] + ',' + c[1] + ',' + c[2] + ')'; }
+
+  function ballRGB(bounces) {
+    var t = Math.min(bounces / BOUNCE_FULL, 1) * (BOUNCE_STOPS.length - 1);
+    var i = Math.min(Math.floor(t), BOUNCE_STOPS.length - 2);
+    return mixRGB(hexToRgb(BOUNCE_STOPS[i]), hexToRgb(BOUNCE_STOPS[i + 1]), t - i);
+  }
+
+  function ballColor(bounces) { return rgbStr(ballRGB(bounces)); }
+
+  // Snap to the half-unit grid the fine details are drawn on
+  function half(v) { return Math.round(v * 2) / 2; }
+
+  function newBall() {
+    return { x: paddle.x + paddle.w / 2, y: paddle.y - BALL_R - 1, vx: 0, vy: 0, bounces: 0 };
+  }
+
+  function attachBall() {
+    ball.x = paddle.x + paddle.w / 2;
+    ball.y = paddle.y - BALL_R - 1;
+    ball.vx = 0; ball.vy = 0;
+  }
+
+  // Lay out level n using the chosen scene.
+  function loadLevel(n) {
+    boss = null;
+    shots = [];
+    if (isBossLevel(n)) { pendingBiome = null; loadBossLevel(n); return; }
+    var s = scaleFor(n);
+    var biome = pendingBiome || BIOMES[Math.floor(Math.random() * BIOMES.length)];
+    pendingBiome = null;
+    var lv = generateLevel(n, s, biome);
+    var cellW = cellWFor(s), cellH = cellHFor(s);
+    var x0 = Math.floor((LW - (lv.cols * cellW - GAP_X)) / 2);
+    levelName = lv.name;
+    run.recent = (run.recent || []).concat(lv.name).slice(-4);
+    bricks = [];
+    for (var r = 0; r < lv.rows.length; r++) {
+      var row = lv.rows[r];
+      for (var c = 0; c < lv.cols; c++) {
+        var ch = row.charAt(c);
+        if (ch === '.' || ch === '') continue;
+        var k = {
+          x: x0 + c * cellW,
+          y: BRICK_Y0 + r * cellH,
+          s: s, w: BW * s, h: BH * s,
+          alive: true, type: 'n', hp: 1, maxHp: 1, flash: 0,
+          seed: r * 17 + c + n * 97,
+          pal: null
+        };
+        if (ch === 'S') {
+          k.type = 's';
+          k.pal = PAL[6];
+        } else if (ch >= 'a' && ch <= 'h') {
+          k.type = 'h'; k.hp = 2; k.maxHp = 2;
+          k.pal = PAL[ch.charCodeAt(0) - 97];
+        } else {
+          k.pal = PAL[parseInt(ch, 10)];
+        }
+        bricks.push(k);
+      }
+    }
+    // Each level is a little faster than the one before, capped at 1.8x, plus run boons
+    curSpeed = speedFor(n);
+  }
+
+  function setPaddleWidth(w) {
+    var centre = paddle.x + paddle.w / 2;
+    paddle.w = w;
+    paddle.x = clamp(centre - w / 2, 0, LW - w);
+  }
+
+  function reset(full) {
+    paddle = { x: LW / 2 - PADDLE_W / 2, w: PADDLE_W, y: PADDLE_BASE_Y, wideT: 0, stunT: 0 };
+    shots = [];
+    if (boss) boss.atk = 2;
+    ball = newBall();
+    particles = [];
+    pickups = [];
+    trail = [];
+    flash = { L: 0, R: 0, T: 0 };
+    paddleFlash = 0;
+    recoil = 0;
+    shake = 0;
+    combo = 0;
+    lastBreak = -10;
+    shieldFlash = 0;
+    if (full) {
+      level = 1;
+      lives = 3;
+      score = 0;
+      run = { speedMul: 1, scoreMul: 1, shields: 0, dropBonus: 0, lifeBonus: 0, wideStart: false, names: [] };
+      pendingBiome = null;
+      choices = [];
+      boonNote = '';
+      loadLevel(1);
+      state = 'intro';
+      stateT = INTRO_T;
+      sfxIntro();
+    } else {
+      state = 'ready';
+    }
+  }
+
+  function launch() {
+    audio();                              // unlocks sound on the first user gesture
+    if (state !== 'ready') return;
+    var ang = (Math.random() * 0.6 - 0.3);            // slight random start angle
+    ball.vx = Math.sin(ang) * curSpeed;
+    ball.vy = -Math.cos(ang) * curSpeed;
+    state = 'play';
+    sfxLaunch();
+  }
+
+  function bounce() {
+    ball.bounces++;
+  }
+
+  // ---------- Path choice ----------
+  // Three random scenes, each with a random boon. Pick one to continue the run.
+  function makeChoices() {
+    var bo = BOONS.slice(), out = [];
+    var recent = run.recent || [];
+    var bs = BIOMES.filter(function (b) { return recent.indexOf(b.name) < 0; });   // skip recently played scenes
+    if (bs.length < 3) bs = BIOMES.slice();
+    var next = isBossLevel(level + 1) ? bossFor(level + 1) : null;
+    for (var i = 0; i < 3; i++) {
+      var bi = Math.floor(Math.random() * bs.length);
+      var oi = Math.floor(Math.random() * bo.length);
+      var dest = next ? { name: 'BOSS', key: [String(next.el), String(next.el), 'S'] } : bs.splice(bi, 1)[0];
+      out.push({ biome: dest, boon: bo.splice(oi, 1)[0] });
+    }
+    choices = out;
+  }
+
+  function cardAt(x, y) {
+    for (var i = 0; i < 3; i++) {
+      var cx = CARD_X0 + i * (CARD_W + CARD_GAP);
+      if (x >= cx && x < cx + CARD_W && y >= CARD_Y && y < CARD_Y + CARD_H) return i;
+    }
+    return -1;
+  }
+
+  function pickPath(i) {
+    var c = choices[i];
+    if (!c) return;
+    sfxPick();
+    c.boon.apply(run);
+    run.names.push(c.boon.name);
+    pendingBiome = c.biome;
+    level++;
+    loadLevel(level);
+    ball = newBall();
+    pickups = [];
+    if (run.wideStart) { setPaddleWidth(PADDLE_WIDE); paddle.wideT = 9999; }
+    lives = Math.min(6, lives + run.lifeBonus);
+    run.lifeBonus = 0;
+    state = 'intro';
+    stateT = INTRO_T;
+    if (boss) sfxBossRoar(); else sfxIntro();
+  }
+
+  // ---------- Bosses: the last level of every stage ----------
+  // Each boss is a big pixel creature built from its element's texture, with a face,
+  // an accessory (horns, fins, crown...), an HP bar, and attacks that stun the paddle.
+  var BOSSES = [
+    { name: 'STONE GOLEM',    el: 6, extra: 'horns' },
+    { name: 'TIDE LEVIATHAN', el: 1, extra: 'fin' },
+    { name: 'MAGMA KING',     el: 0, extra: 'crown' },
+    { name: 'FROST WARDEN',   el: 4, extra: 'spikes' },
+    { name: 'VOID MAW',       el: 7, extra: 'tendrils' }
+  ];
+  var BOSS_COLS = 32, BOSS_ROWS = 16, BOSS_PX = 2;    // sprite grid, units per sprite pixel
+  var BOSS_W = BOSS_COLS * BOSS_PX, BOSS_H = BOSS_ROWS * BOSS_PX, BOSS_Y = 34;
+  var boss = null, shots = [];
+
+  function isBossLevel(n) { return levelInStage(n) === LEVELS_PER_STAGE; }
+  function bossFor(n) { return BOSSES[(stageOf(n) - 1) % BOSSES.length]; }
+  function speedFor(n) { return Math.min(BASE_SPEED * (1 + 0.06 * (n - 1)), BASE_SPEED * 1.8) * run.speedMul; }
+
+  // Shape: 0 empty, 1 body (an oval), 2 accessory on top
+  function bossMask(def) {
+    var m = [], x, y, i;
+    for (y = 0; y < BOSS_ROWS; y++) {
+      m.push([]);
+      for (x = 0; x < BOSS_COLS; x++) {
+        var dx = (x - 15.5) / 15, dy = (y - 9) / 6.8;
+        m[y].push(y >= 3 && dx * dx + dy * dy <= 1 ? 1 : 0);
+      }
+    }
+    function set(x, y) { if (y >= 0 && y < BOSS_ROWS && x >= 0 && x < BOSS_COLS && !m[y][x]) m[y][x] = 2; }
+    if (def.extra === 'horns') {
+      for (i = 0; i < 3; i++) { set(9 - i, 2 - i); set(10 - i, 2 - i); set(22 + i, 2 - i); set(21 + i, 2 - i); }
+    } else if (def.extra === 'crown') {
+      [8, 12, 19, 23].forEach(function (p) { set(p, 2); set(p, 1); set(p, 0); set(p + 1, 2); set(p + 1, 1); });
+      for (x = 8; x <= 24; x++) set(x, 2);
+    } else if (def.extra === 'spikes') {
+      for (x = 6; x <= 25; x += 3) { set(x, 2); set(x, 1); set(x + 1, 2); }
+    } else if (def.extra === 'fin') {
+      for (i = 0; i < 3; i++) for (x = 15 - i; x <= 16 + i; x++) set(x - 2 + i, i);
+    } else if (def.extra === 'tendrils') {
+      [8, 12, 19, 23].forEach(function (p, k) { set(p, 2); set(p + (k % 2 ? 1 : -1), 1); set(p, 0); });
+    }
+    return m;
+  }
+
+  function loadBossLevel(n) {
+    var def = bossFor(n), st = stageOf(n), s = scaleFor(n);
+    var hp = 10 + 5 * st;
+    boss = {
+      def: def, mask: bossMask(def), x: (LW - BOSS_W) / 2, y: BOSS_Y,
+      hp: hp, maxHp: hp, flash: 0, phase: 0, speed: 0.55 + 0.12 * st,
+      atk: 2.5, atkEvery: Math.max(1.1, 2.5 - 0.25 * st), boomT: 0, seed: n * 31
+    };
+    shots = [];
+    levelName = def.name;
+    // A row of guard bricks of the boss's element between the boss and the paddle
+    var cellW = cellWFor(s), cols = colsFor(s);
+    var x0 = Math.floor((LW - (cols * cellW - GAP_X)) / 2), gy = BOSS_Y + BOSS_H + 6;
+    bricks = [];
+    for (var c = 0; c < cols; c++) {
+      if (st === 1 && c % 2 === 1) continue;            // the first boss's guard has gaps
+      var hard = st >= 3 && c % 2 === 0;
+      bricks.push({
+        x: x0 + c * cellW, y: gy, s: s, w: BW * s, h: BH * s, alive: true,
+        type: hard ? 'h' : 'n', hp: hard ? 2 : 1, maxHp: hard ? 2 : 1, flash: 0,
+        seed: c + n * 97, pal: PAL[def.el]
+      });
+    }
+    curSpeed = speedFor(n);
+  }
+
+  function bossEnraged() { return boss && boss.hp <= boss.maxHp / 2; }
+
+  function updateBoss(dt) {
+    if (!boss) return;
+    boss.flash = Math.max(0, boss.flash - dt);
+    boss.phase += dt * boss.speed * (bossEnraged() ? 1.6 : 1);
+    boss.x = (LW - BOSS_W) / 2 + Math.sin(boss.phase) * ((LW - BOSS_W) / 2 - 4);
+    boss.y = BOSS_Y + Math.sin(time * 2) * 1.5;
+    if (state === 'play') {
+      boss.atk -= dt;
+      if (boss.atk <= 0) {
+        boss.atk = boss.atkEvery * (bossEnraged() ? 0.6 : 1);
+        fireShot();
+      }
+    }
+  }
+
+  // Element orbs aimed roughly at the paddle; a spread of three when enraged from stage 3
+  function fireShot() {
+    var sx = boss.x + BOSS_W / 2, sy = boss.y + BOSS_H - 2;
+    var speed = 48 + 8 * stageOf(level);
+    var aim = clamp((paddle.x + paddle.w / 2 - sx) / 120, -0.5, 0.5);
+    var spread = bossEnraged() && stageOf(level) >= 3 ? [-0.35, 0, 0.35] : [0];
+    for (var i = 0; i < spread.length; i++) {
+      var a = aim + spread[i];
+      shots.push({ x: sx, y: sy, vx: Math.sin(a) * speed, vy: Math.cos(a) * speed, t: 0 });
+    }
+    sfxBossShoot();
+  }
+
+  function updateShots(dt) {
+    for (var i = shots.length - 1; i >= 0; i--) {
+      var o = shots[i];
+      o.x += o.vx * dt; o.y += o.vy * dt; o.t += dt;
+      if (o.y > LH + 4) { shots.splice(i, 1); continue; }
+      if (o.x + 1.5 >= paddle.x && o.x - 1.5 <= paddle.x + paddle.w &&
+          o.y + 1.5 >= paddle.y && o.y - 1.5 <= paddle.y + PADDLE_H) {
+        shots.splice(i, 1);
+        paddle.stunT = 0.9;                              // the paddle freezes briefly
+        shake = Math.min(1, shake + 0.5);
+        impactSparks(o.x, paddle.y, 0, -1, 10, PAL[boss ? boss.def.el : 3].tones[4]);
+        sfxStun();
+      }
+    }
+  }
+
+  function bossHit(px, py) {
+    var left = boss.x + 2, right = boss.x + BOSS_W - 2;
+    var wasInX = px + BALL_R > left && px - BALL_R < right;
+    if (wasInX) { ball.vy = -ball.vy; ball.y = py; }
+    else        { ball.vx = -ball.vx; ball.x = px; }
+    bounce();
+    boss.hp--;
+    boss.flash = 0.12;
+    score += Math.round(25 * run.scoreMul);
+    shake = Math.min(1, shake + 0.4);
+    var pal = PAL[boss.def.el];
+    ringAt(ball.x, ball.y, pal.tones[4], 0.3);
+    spawnSparks((SHATTER[pal.fx] || SHATTER.ember).sparks, pal, ball.x, ball.y, ball.x, ball.y, ball.vx >= 0 ? 1 : -1);
+    sfxBossHit(pal.fx);
+    if (boss.hp <= 0) {
+      state = 'bossdown';
+      stateT = 1.6;
+      boss.boomT = 0;
+      shots = [];
+      sfxBossRoar();
+    }
+  }
+
+  // Death: a chain of explosions across the body, then it bursts into pixels
+  function updateBossDeath(dt) {
+    stateT -= dt;
+    boss.boomT -= dt;
+    boss.flash = 0.05;
+    var pal = PAL[boss.def.el];
+    if (boss.boomT <= 0) {
+      boss.boomT = 0.12;
+      var bx = boss.x + Math.random() * BOSS_W, by = boss.y + 6 + Math.random() * (BOSS_H - 6);
+      ringAt(bx, by, pal.tones[4], 0.35);
+      spawnSparks((SHATTER[pal.fx] || SHATTER.ember).sparks, pal, bx, by, bx, by, Math.random() < 0.5 ? 1 : -1);
+      shake = Math.min(1, shake + 0.3);
+      sfxBoom();
+    }
+    if (stateT <= 0) {
+      var prof = SHATTER[pal.fx] || SHATTER.ember;
+      var cx = boss.x + BOSS_W / 2, cy = boss.y + BOSS_H / 2;
+      for (var y = 0; y < BOSS_ROWS; y++) for (var x = 0; x < BOSS_COLS; x += 2) {
+        if (!boss.mask[y][x]) continue;
+        var px = boss.x + (x + 1) * BOSS_PX, py = boss.y + (y + 0.5) * BOSS_PX;
+        var dx = px - cx, dy = py - cy, d = Math.hypot(dx, dy) || 1, sp = 50 + Math.random() * 90;
+        var life = 0.8 + Math.random() * 0.8;
+        pushParticle({
+          x: px, y: py, vx: dx / d * sp, vy: dy / d * sp - 30, g: prof.g || 120, drag: 0.98,
+          life: life, max: life, color: pal.tones[1 + Math.floor(Math.random() * 4)],
+          kind: 'px', pull: 0, cx: cx, cy: cy, wob: 0, sz: 1
+        });
+      }
+      ringAt(cx, cy, pal.tones[4], 0.6);
+      shake = 1;
+      sfxBoom();
+      boss = null;
+      finishLevel();
+    }
+  }
+
+  function drawBoss() {
+    if (!boss) return;
+    var pal = PAL[boss.def.el], t = pal.tones, m = boss.mask;
+    var bx = half(boss.x), by = half(boss.y), P = BOSS_PX;
+    for (var y = 0; y < BOSS_ROWS; y++) {
+      for (var x = 0; x < BOSS_COLS; x++) {
+        var v = m[y][x];
+        if (!v) continue;
+        var edge = !(x > 0 && m[y][x - 1]) || !(x < BOSS_COLS - 1 && m[y][x + 1]) ||
+                   !(y > 0 && m[y - 1][x]) || !(y < BOSS_ROWS - 1 && m[y + 1][x]);
+        var c;
+        if (edge) c = t[0];
+        else if (boss.flash > 0) c = '#ffffff';
+        else if (v === 2) c = t[y % 2 ? 3 : 4];
+        else {
+          var idx = BP.staticIndex(pal, 2 + (x % 28), 2 + (y % 10), boss.seed);
+          if (y >= BOSS_ROWS - 3 && idx > 1) idx = 1;      // shadowed underside
+          if (y <= 4 && idx === 2) idx = 3;               // lit top
+          c = t[Math.max(0, idx)];
+        }
+        g.fillStyle = c;
+        g.fillRect(bx + x * P, by + y * P, P, P);
+      }
+    }
+    // Face: eyes that follow the ball and blink, a toothy mouth that glows when enraged
+    var angry = bossEnraged();
+    var look = clamp(Math.round((ball.x - (boss.x + BOSS_W / 2)) / 40), -1, 1);
+    var blink = (time % 3.2) < 0.12;
+    [9, 20].forEach(function (ex) {
+      if (blink) { g.fillStyle = t[0]; g.fillRect(bx + ex * P, by + 7 * P, 3 * P, P); return; }
+      g.fillStyle = t[0]; g.fillRect(bx + (ex - 1) * P, by + 5 * P, 5 * P, 5 * P);   // socket
+      g.fillStyle = angry ? '#ff4040' : '#ffffff'; g.fillRect(bx + ex * P, by + 6 * P, 3 * P, 3 * P);
+      g.fillStyle = '#07070d'; g.fillRect(bx + (ex + 1 + look) * P, by + 7 * P, P, P);  // pupil
+      g.fillStyle = 'rgba(255,255,255,0.8)'; g.fillRect(bx + ex * P + 0.5, by + 6 * P + 0.5, 1, 1);
+    });
+    for (var mx = 11; mx <= 20; mx++) {
+      g.fillStyle = t[0];
+      g.fillRect(bx + mx * P, by + 11 * P, P, P);
+      g.fillStyle = mx % 2 ? '#fff6e0' : t[0];                                   // teeth
+      g.fillRect(bx + mx * P, by + 11 * P, P, P / 2);
+      if (mx > 11 && mx < 20) {
+        g.fillStyle = angry && Math.floor(time * 8) % 2 ? t[4] : t[0];
+        g.fillRect(bx + mx * P, by + 12 * P, P, P);
+      }
+    }
+  }
+
+  function drawShots() {
+    for (var i = 0; i < shots.length; i++) {
+      var o = shots[i], t = PAL[boss ? boss.def.el : 3].tones;
+      var x = half(o.x), y = half(o.y);
+      g.globalAlpha = 0.35; g.fillStyle = t[2];                       // short trail
+      g.fillRect(half(o.x - o.vx * 0.04) - 0.5, half(o.y - o.vy * 0.04) - 0.5, 1, 1);
+      g.globalAlpha = 1;
+      g.fillStyle = t[0]; g.fillRect(x - 1.5, y - 1, 3, 2); g.fillRect(x - 1, y - 1.5, 2, 3);
+      g.fillStyle = Math.floor(o.t * 12) % 2 ? t[3] : t[2]; g.fillRect(x - 1, y - 1, 2, 2);
+      g.fillStyle = t[4]; g.fillRect(x - 0.5, y - 0.5, 0.5, 0.5);
+    }
+  }
+
+  function drawBossBar() {
+    if (!boss) return;
+    var t = PAL[boss.def.el].tones, bw = 140, bxp = (LW - bw) / 2;
+    var frac = Math.max(0, boss.hp) / boss.maxHp;
+    g.font = FONT_CARD; g.textAlign = 'center'; g.textBaseline = 'top';
+    g.fillStyle = t[3];
+    g.fillText(boss.def.name, LW / 2, 21);
+    g.fillStyle = '#1a1b22'; g.fillRect(bxp - 0.5, 27.5, bw + 1, 3);
+    g.fillStyle = bossEnraged() && Math.floor(time * 6) % 2 ? t[4] : t[2];
+    g.fillRect(bxp, 28, bw * frac, 2);
+    g.fillStyle = t[4]; g.fillRect(bxp, 28, bw * frac, 0.5);
+    g.textAlign = 'left';
+  }
+
+  // ---------- Particles ----------
+  // Per-element destruction: how the pixel chunks fly and which sparks appear.
+  //   g: gravity (negative rises), drag: air resistance per 1/60 s,
+  //   spread: outward speed, kinds: chunk looks, pull: implode toward centre
+  var SHATTER = {
+    ember:   { g: -30,  drag: 0.97, life: [0.8, 1.3], spread: 60,  kinds: ['px'],     sparks: 'ember' },
+    wave:    { g: 140,  drag: 0.99, life: [0.9, 1.4], spread: 70,  kinds: ['px'],     sparks: 'splash' },
+    bubble:  { g: -35,  drag: 0.98, life: [1.0, 1.6], spread: 45,  kinds: ['bubble'], sparks: 'bubble' },
+    thunder: { g: 60,   drag: 0.95, life: [0.35, 0.6], spread: 160, kinds: ['px'],    sparks: 'zap' },
+    glacier: { g: 110,  drag: 0.99, life: [1.0, 1.5], spread: 55,  kinds: ['shard'],  sparks: 'glint' },
+    gale:    { g: -8,   drag: 0.985, life: [0.6, 0.9], spread: 50, kinds: ['streak'], sparks: 'wind', windX: true },
+    terra:   { g: 280,  drag: 0.99, life: [0.8, 1.2], spread: 80,  kinds: ['px'],     sparks: 'dust' },
+    void:    { g: 0,    drag: 0.99, life: [0.9, 1.2], spread: 0,   kinds: ['px'],     sparks: 'ring', pull: true }
+  };
+
+  function pushParticle(q) {
+    if (particles.length > 1500) particles.splice(0, particles.length - 1400);
+    particles.push(q);
+  }
+
+  function spark(x, y, vx, vy, g, drag, life, color, kind) {
+    pushParticle({
+      x: x, y: y, vx: vx, vy: vy, g: g, drag: drag,
+      life: life, max: life, color: color, kind: kind,
+      pull: 0, cx: x, cy: y, wob: Math.random() * TAU
+    });
+  }
+
+  function ringAt(x, y, color, life) {
+    pushParticle({
+      x: x, y: y, vx: 0, vy: 0, g: 0, drag: 1, life: life, max: life,
+      color: color, kind: 'ring', pull: 0, cx: x, cy: y, wob: 0
+    });
+  }
+
+  // Small burst of pixels when the ball hits a wall, paddle or brick.
+  // nx, ny is the surface normal, so the sparks fly away from the surface.
+  function impactSparks(x, y, nx, ny, n, color) {
+    var col = color || ballColor(ball.bounces);
+    for (var i = 0; i < n; i++) {
+      var s = 40 + Math.random() * 60;
+      spark(x, y, (nx + (Math.random() - 0.5) * 1.2) * s, (ny + (Math.random() - 0.5) * 1.2) * s,
+            120, 0.9, 0.2 + Math.random() * 0.15, col, 'px');
+    }
+  }
+
+  // Each pixel of the brick becomes a chunk that flies out from the impact point.
+  function shatter(k, hx, hy) {
+    var pal = k.pal;
+    var prof = SHATTER[pal.fx] || SHATTER.ember;
+    var cx = k.x + k.w / 2, cy = k.y + k.h / 2;
+    var windDir = ball.vx >= 0 ? 1 : -1;
+
+    ringAt(hx, hy, pal.tones[4], 0.25);
+
+    // One chunk per 2x2 block of sprite pixels, coloured like that part of the brick
+    for (var y = 0; y < BH; y += 2) {
+      for (var x = 0; x < BW; x += 2) {
+        var idx = BP.staticIndex(pal, x + 1, y + 1, k.seed);
+        if (idx < 0) continue;
+        var px = k.x + (x + 1) * k.s, py = k.y + (y + 1) * k.s;
+        var dx = px - hx, dy = py - hy, d = Math.hypot(dx, dy) || 1;
+        var sp = prof.spread * (0.5 + Math.random() * 0.8);
+        var vx = (dx / d) * sp + (Math.random() - 0.5) * 30;
+        var vy = (dy / d) * sp + (Math.random() - 0.5) * 30;
+        if (prof.windX) vx += windDir * 90;
+        if (prof.pull) {
+          vx = (cx - px) * 2.2 + (Math.random() - 0.5) * 20;
+          vy = (cy - py) * 2.2 + (Math.random() - 0.5) * 20;
+        }
+        var col = pal.tones[idx];
+        if (idx === 2 && Math.random() < 0.3) col = pal.tones[3];
+        var life = prof.life[0] + Math.random() * (prof.life[1] - prof.life[0]);
+        pushParticle({
+          x: px, y: py, vx: vx, vy: vy, g: prof.g, drag: prof.drag,
+          life: life, max: life, color: col,
+          kind: prof.kinds[(Math.random() * prof.kinds.length) | 0],
+          pull: prof.pull ? 5 : 0, cx: cx, cy: cy, wob: Math.random() * TAU,
+          sz: Math.max(0.5, k.s)
+        });
+      }
+    }
+    spawnSparks(prof.sparks, pal, cx, cy, hx, hy, windDir);
+  }
+
+  // Secondary sparks that match each element.
+  function spawnSparks(type, pal, cx, cy, hx, hy, windDir) {
+    var t = pal.tones, i, a, s;
+    if (type === 'ember') {
+      for (i = 0; i < 8; i++)
+        spark(hx + (Math.random() - 0.5) * 12, hy, (Math.random() - 0.5) * 40, -40 - Math.random() * 60,
+              -50, 0.96, 0.6 + Math.random() * 0.4, Math.random() < 0.5 ? t[3] : t[4], 'px');
+    } else if (type === 'splash') {
+      for (i = 0; i < 10; i++)
+        spark(hx, hy, (Math.random() - 0.5) * 120, -90 - Math.random() * 80,
+              320, 0.99, 0.7, Math.random() < 0.5 ? t[2] : t[3], 'px');
+    } else if (type === 'bubble') {
+      for (i = 0; i < 4; i++)
+        spark(cx + (Math.random() - 0.5) * 10, cy + (Math.random() - 0.5) * 4, 0, -15 - Math.random() * 20,
+              -10, 1, 1.1 + Math.random() * 0.5, Math.random() < 0.5 ? t[2] : t[4], 'bubble');
+    } else if (type === 'zap') {
+      for (i = 0; i < 12; i++) {
+        a = (i / 12) * TAU + Math.random() * 0.3;
+        s = 140 + Math.random() * 90;
+        spark(hx, hy, Math.cos(a) * s, Math.sin(a) * s, 0, 0.88, 0.22 + Math.random() * 0.15, t[4], 'streak');
+      }
+    } else if (type === 'glint') {
+      for (i = 0; i < 4; i++) {
+        a = (i / 4) * TAU;
+        spark(hx, hy, Math.cos(a) * 25, Math.sin(a) * 25, 0, 0.85, 0.35, t[4], 'glint');
+      }
+    } else if (type === 'wind') {
+      for (i = 0; i < 6; i++)
+        spark(hx + (Math.random() - 0.5) * 6, hy + (Math.random() - 0.5) * 8,
+              windDir * (120 + Math.random() * 120), (Math.random() - 0.5) * 30,
+              0, 0.97, 0.45 + Math.random() * 0.3, Math.random() < 0.5 ? t[2] : t[3], 'streak');
+    } else if (type === 'dust') {
+      for (i = 0; i < 6; i++)
+        spark(cx + (Math.random() - 0.5) * 10, cy, (Math.random() - 0.5) * 30, -10 - Math.random() * 15,
+              -6, 0.9, 0.6 + Math.random() * 0.4, t[1], 'puff');
+    } else if (type === 'ring') {
+      for (i = 0; i < 16; i++) {
+        a = (i / 16) * TAU;
+        spark(cx, cy, Math.cos(a) * 110, Math.sin(a) * 110, 0, 0.9, 0.4, t[3], 'px');
+      }
+    }
+  }
+
+  function updateParticles(dt) {
+    for (var i = particles.length - 1; i >= 0; i--) {
+      var q = particles[i];
+      q.life -= dt;
+      if (q.life <= 0) { particles.splice(i, 1); continue; }
+      if (q.pull) {
+        q.vx += (q.cx - q.x) * q.pull * dt;
+        q.vy += (q.cy - q.y) * q.pull * dt;
+      }
+      q.vy += q.g * dt;
+      var dr = Math.pow(q.drag, dt * 60);
+      q.vx *= dr; q.vy *= dr;
+      if (q.kind === 'bubble') q.vx = Math.sin(time * 5 + q.wob) * 8;   // bubbles wobble
+      q.x += q.vx * dt;
+      q.y += q.vy * dt;
+    }
+  }
+
+  function drawParticles() {
+    for (var i = 0; i < particles.length; i++) {
+      var q = particles[i];
+      var a = Math.max(0, q.life / q.max);
+      var x = half(q.x), y = half(q.y), h = 0.5;      // fine half-unit pixels
+      var sz = q.sz || h;
+      g.globalAlpha = Math.min(1, a * 1.6);
+      g.fillStyle = q.color;
+      if (q.kind === 'bubble') {
+        g.fillRect(x, y + h, 1.5, h); g.fillRect(x + h, y, h, 1.5);   // small round bubble
+      } else if (q.kind === 'shard') {
+        if (Math.sin(q.wob + q.life * 12) > 0) { g.fillRect(x, y, sz, sz); g.fillRect(x + sz, y + sz, h, h); }
+        else g.fillRect(x, y, sz * 2, h);
+      } else if (q.kind === 'streak') {
+        g.fillRect(q.vx >= 0 ? x - 1.5 : x, y, 2, h);
+      } else if (q.kind === 'glint') {
+        g.fillRect(x - 1, y, 2.5, h); g.fillRect(x, y - 1, h, 2.5);
+      } else if (q.kind === 'puff') {
+        g.globalAlpha *= 0.5; g.fillRect(x, y, 1.5, 1.5);
+      } else if (q.kind === 'ring') {
+        var r = half((1 - a) * 9 + 1);
+        g.fillRect(x - r, y - r, 2 * r + h, h);
+        g.fillRect(x - r, y + r, 2 * r + h, h);
+        g.fillRect(x - r, y - r, h, 2 * r + h);
+        g.fillRect(x + r, y - r, h, 2 * r + h);
+      } else {
+        g.fillRect(x, y, sz, sz);
+      }
+    }
+    g.globalAlpha = 1;
+  }
+
+  // ---------- Power-ups ----------
+  function spawnPickup(x, y) {
+    pickups.push({ x: x, y: y, vy: 38, t: 0 });
+  }
+
+  function updatePickups(dt) {
+    for (var i = pickups.length - 1; i >= 0; i--) {
+      var p = pickups[i];
+      p.y += p.vy * dt;
+      p.t += dt;
+      if (p.y > LH) { pickups.splice(i, 1); continue; }
+      if (p.y + 4 >= paddle.y && p.y <= paddle.y + PADDLE_H &&
+          p.x + 6 >= paddle.x && p.x <= paddle.x + paddle.w) {
+        setPaddleWidth(PADDLE_WIDE);
+        paddle.wideT = WIDE_TIME;
+        impactSparks(p.x + 3, paddle.y, 0, -1, 8, '#ffe27a');
+        sfxPower();
+        pickups.splice(i, 1);
+      }
+    }
+  }
+
+  function drawPickups() {
+    for (var i = 0; i < pickups.length; i++) {
+      var p = pickups[i];
+      var x = half(p.x), y = half(p.y), h = 0.5;
+      var pulse = Math.floor(p.t * 8) % 2;
+      g.fillStyle = '#7a3300';                                   // rounded capsule outline
+      g.fillRect(x + h, y, 5, 4); g.fillRect(x, y + h, 6, 3);
+      g.fillStyle = pulse ? '#ff3a6d' : '#ffb42a';               // body
+      g.fillRect(x + h, y + h, 5, 3);
+      g.fillStyle = '#ffe27a';                                   // lit upper half
+      g.fillRect(x + h, y + h, 5, 1);
+      g.fillStyle = '#fff6c8';                                   // highlight
+      g.fillRect(x + 1, y + h, 2, h);
+      g.fillStyle = '#a04a00';                                   // seam
+      g.fillRect(x + 3, y + h, h, 3);
+    }
+  }
+
+  // ---------- Hits ----------
+  function wallHit(side) {
+    bounce();
+    flash[side] = 0.14;
+    var nx = side === 'L' ? 1 : side === 'R' ? -1 : 0;
+    var ny = side === 'T' ? 1 : 0;
+    sfxWall(ball.x);
+    impactSparks(ball.x, ball.y, nx, ny, 3);
+  }
+
+  function paddleHit(hit) {
+    bounce();
+    paddleFlash = 0.14;
+    recoil = 0.06;
+    sfxPaddle(hit);
+    impactSparks(ball.x, ball.y, 0, -1, 5);
+  }
+
+  function brickHit(k, px, py) {
+    // Reflect on the axis we entered through, and push the ball out of the brick
+    var wasInX = px + BALL_R > k.x && px - BALL_R < k.x + k.w;
+    if (wasInX) { ball.vy = -ball.vy; ball.y = py; }
+    else        { ball.vx = -ball.vx; ball.x = px; }
+    bounce();
+
+    var nx = wasInX ? 0 : (ball.vx > 0 ? 1 : -1);
+    var ny = wasInX ? (ball.vy > 0 ? 1 : -1) : 0;
+
+    // Steel: indestructible
+    if (k.type === 's') {
+      k.flash = 0.08;
+      shake = Math.min(1, shake + 0.15);
+      sfxClank(k.x + k.w / 2);
+      impactSparks(ball.x, ball.y, nx, ny, 3, '#c8cad6');
+      return;
+    }
+
+    // Hard brick: takes a hit and cracks
+    if (k.type === 'h' && k.hp > 1) {
+      k.hp--;
+      k.flash = 0.1;
+      shake = Math.min(1, shake + 0.2);
+      sfxTink(k.x + k.w / 2);
+      ringAt(ball.x, ball.y, k.pal.tones[3], 0.18);
+      impactSparks(ball.x, ball.y, nx, ny, 3);
+      return;
+    }
+
+    // Break it
+    k.alive = false;
+    var now = time;
+    combo = (now - lastBreak < COMBO_WINDOW) ? combo + 1 : 1;
+    lastBreak = now;
+    comboColor = k.pal.tones[4];
+    score += Math.round(10 * combo * run.scoreMul);
+
+    shatter(k, ball.x, ball.y);
+    var ladder = Math.pow(2, Math.min(combo - 1, 12) / 6);   // up a semitone per 2 combo hits
+    sfxBreak(k.pal.fx, k.x + k.w / 2, pitchMul() * ladder);
+    if (combo >= 3) tone(1568 * ladder, 0.15, 'sine', 0.12, null, 0.05);
+    shake = Math.min(1, shake + 0.35);
+    if (Math.random() < PICKUP_CHANCE + run.dropBonus) spawnPickup(k.x + k.w / 2 - 3, k.y + k.h / 2 - 2);
+  }
+
+  // ---------- Main update ----------
+  function levelCleared() {
+    if (boss) return false;               // boss levels end when the boss is defeated
+    for (var i = 0; i < bricks.length; i++) {
+      if (bricks[i].type !== 's' && bricks[i].alive) return false;
+    }
+    return true;
+  }
+
+  // Score the cleared level, then show the path cards (or the win screen after the last one)
+  function finishLevel() {
+    clearBonus = Math.round(100 * level * run.scoreMul);
+    if (levelInStage(level) === LEVELS_PER_STAGE) clearBonus += Math.round(1500 * stageOf(level) * run.scoreMul);
+    score += clearBonus;
+    lives = Math.min(5, lives + 1);
+    sfxClear();
+    if (level >= TOTAL_LEVELS) { state = 'won'; return; }
+    state = 'choose';
+    makeChoices();
+  }
+
+  function step(dt) {
+    time += dt;
+
+    // Decay visual timers
+    flash.L = Math.max(0, flash.L - dt);
+    flash.R = Math.max(0, flash.R - dt);
+    flash.T = Math.max(0, flash.T - dt);
+    paddleFlash = Math.max(0, paddleFlash - dt);
+    recoil = Math.max(0, recoil - dt);
+    shake = Math.max(0, shake - dt * 3);
+    shieldFlash = Math.max(0, shieldFlash - dt);
+    for (var b = 0; b < bricks.length; b++) bricks[b].flash = Math.max(0, bricks[b].flash - dt);
+
+    // Paddle from keyboard, pointer and touch pad: left/right and up/down
+    var stunX = paddle.x, stunY = paddle.y;
+    var dir = (keys.ArrowLeft ? -1 : 0) + (keys.ArrowRight ? 1 : 0);
+    if (dir !== 0) paddle.x += dir * 140 * dt;
+    if (pointerX !== null) paddle.x = pointerX - paddle.w / 2;
+    paddle.x += padDX;                    // touch pad drag, in logical pixels
+    padDX = 0;
+    paddle.x = clamp(paddle.x, 0, LW - paddle.w);
+
+    var vdir = (keys.ArrowUp || keys.w || keys.W ? -1 : 0) + (keys.ArrowDown || keys.s || keys.S ? 1 : 0);
+    if (vdir !== 0) paddle.y += vdir * 90 * dt;
+    paddle.y += paddleDY + padDY;         // pointer and touch pad movement, in logical pixels
+    paddleDY = 0;
+    padDY = 0;
+    paddle.y = clamp(paddle.y, PADDLE_TOP_Y, PADDLE_BASE_Y);
+    if (paddle.stunT > 0) {                // stunned by a boss orb: stay put
+      paddle.stunT -= dt;
+      paddle.x = stunX;
+      paddle.y = stunY;
+    }
+
+    // Wide paddle timer (boon-wide paddles last all level)
+    if (paddle.wideT > 0 && paddle.wideT < 9000) {
+      paddle.wideT -= dt;
+      if (paddle.wideT <= 0) setPaddleWidth(run.wideStart ? PADDLE_WIDE : PADDLE_W);
+    }
+
+    updateParticles(dt);
+    updatePickups(dt);
+    updateBoss(dt);
+    if (state === 'play') updateShots(dt);
+
+    if (state === 'bossdown') { updateBossDeath(dt); return; }
+    if (state === 'intro') {
+      attachBall();
+      stateT -= dt;
+      if (stateT <= 0) state = 'ready';
+      return;
+    }
+    if (state === 'choose') {
+      attachBall();
+      return;
+    }
+    if (state === 'ready') {
+      attachBall();
+      trail.length = 0;
+      return;
+    }
+    if (state !== 'play') return;
+
+    var dist = curSpeed * dt;
+    var n = Math.max(1, Math.ceil(dist / 0.5));
+    var sub = dt / n;
+    for (var i = 0; i < n; i++) {
+      var px = ball.x, py = ball.y;
+      ball.x += ball.vx * sub;
+      ball.y += ball.vy * sub;
+      collide(px, py);
+      if (state !== 'play') return;
+    }
+
+    trail.push({ x: ball.x, y: ball.y });
+    if (trail.length > 10) trail.shift();
+  }
+
+  function collide(px, py) {
+    var r = BALL_R;
+
+    // Walls
+    if (ball.x - r < 0) { ball.x = r; ball.vx = Math.abs(ball.vx); wallHit('L'); }
+    if (ball.x + r > LW) { ball.x = LW - r; ball.vx = -Math.abs(ball.vx); wallHit('R'); }
+    if (ball.y - r < 0) { ball.y = r; ball.vy = Math.abs(ball.vy); wallHit('T'); }
+
+    // Paddle: when moving down and crossing its top edge.
+    // Also catches a paddle that rises onto the ball, so the ball can't slip through.
+    if (ball.vy > 0 &&
+        ball.y + r >= paddle.y &&
+        (py + r <= paddle.y + 1 || ball.y + r <= paddle.y + PADDLE_H + 3) &&
+        ball.x >= paddle.x - r && ball.x <= paddle.x + paddle.w + r) {
+      var hit = (ball.x - (paddle.x + paddle.w / 2)) / (paddle.w / 2);
+      hit = clamp(hit, -1, 1);
+      var ang = hit * 1.0;                              // up to ~57 degrees
+      var speed = Math.hypot(ball.vx, ball.vy);
+      ball.vx = Math.sin(ang) * speed;
+      ball.vy = -Math.cos(ang) * speed;
+      ball.y = paddle.y - r;
+      paddleHit(hit);
+    }
+
+    // Bricks (steel included, so it bounces the ball)
+    for (var b = 0; b < bricks.length; b++) {
+      var k = bricks[b];
+      if (!k.alive) continue;
+      var cx = clamp(ball.x, k.x, k.x + k.w);
+      var cy = clamp(ball.y, k.y, k.y + k.h);
+      var dx = ball.x - cx, dy = ball.y - cy;
+      if (dx * dx + dy * dy > r * r) continue;
+      brickHit(k, px, py);
+      break;
+    }
+
+    // Boss: the ball damages it on contact
+    if (boss && boss.hp > 0) {
+      var bcx = clamp(ball.x, boss.x + 2, boss.x + BOSS_W - 2);
+      var bcy = clamp(ball.y, boss.y + 6, boss.y + BOSS_H);
+      var bdx = ball.x - bcx, bdy = ball.y - bcy;
+      if (bdx * bdx + bdy * bdy <= r * r) bossHit(px, py);
+      if (state !== 'play') return;
+    }
+
+    if (levelCleared()) { finishLevel(); return; }
+
+    // Floor: a shield saves the ball once, otherwise lose a life
+    if (ball.y - r > LH) {
+      if (run.shields > 0) {
+        run.shields--;
+        ball.y = LH - r - 2;
+        ball.vy = -Math.abs(ball.vy);
+        shieldFlash = 0.35;
+        sfxShield();
+        return;
+      }
+      lives--;
+      sfxLoss();
+      if (lives <= 0) { state = 'over'; sfxOver(); return; }
+      reset(false);
+    }
+  }
+
+  // ---------- Draw ----------
+  // Fill a rectangle given in logical brick pixels, scaled to the brick's size.
+  function rect(k, x, y, w, h, color) {
+    g.fillStyle = color;
+    g.fillRect(k.x + x * k.s, k.y + y * k.s, w * k.s, h * k.s);
+  }
+
+  // Steel plate: rounded frame, brushed bands, bevels, four rivets with highlights
+  function drawSteel(k) {
+    rect(k, 1, 0, BW - 2, BH, '#1a1b22');                  // outline with cut corners
+    rect(k, 0, 1, BW, BH - 2, '#1a1b22');
+    rect(k, 1, 1, BW - 2, BH - 2, '#5b5f70');              // plate
+    rect(k, 1, 1, BW - 2, 1, '#b4bacb');                    // top bevel
+    rect(k, 1, 2, BW - 2, 1, '#8a90a4');
+    rect(k, 1, 1, 1, BH - 2, '#9aa0b4');                    // left bevel
+    rect(k, 1, BH - 2, BW - 2, 1, '#2f3240');               // bottom bevel
+    rect(k, BW - 2, 1, 1, BH - 2, '#373a48');               // right bevel
+    for (var b = 0; b < 3; b++) {                           // brushed bands
+      var bx = 5 + ((k.seed * 7 + b * 9) % (BW - 14));
+      rect(k, bx, 4 + b * 3, 6 + (b * 3 + k.seed) % 5, 1, b % 2 ? '#6d7286' : '#50546a');
+    }
+    var rv = [[3, 3], [BW - 5, 3], [3, BH - 5], [BW - 5, BH - 5]];
+    for (var i = 0; i < 4; i++) {                           // rivets
+      rect(k, rv[i][0], rv[i][1], 2, 2, '#3a3d4c');
+      rect(k, rv[i][0], rv[i][1], 1, 1, '#e4e7f0');
+    }
+    if (k.flash > 0) {
+      g.globalAlpha = k.flash / 0.08 * 0.7;
+      rect(k, 1, 1, BW - 2, BH - 2, '#ffffff');
+      g.globalAlpha = 1;
+    }
+  }
+
+  // Cracks on a damaged hard brick: a jagged split with a branch
+  function drawCracks(k) {
+    g.globalAlpha = 0.85;
+    var prev = null;
+    for (var x = 4; x < BW - 4; x++) {
+      var y = clamp(Math.round(BH / 2 + Math.sin(x * 0.7 + k.seed) * 2 + ((x * 7 + k.seed) % 3) - 1), 2, BH - 3);
+      rect(k, x, y, 1, 1, '#07070d');
+      if (prev !== null && Math.abs(y - prev) > 1) rect(k, x, Math.min(y, prev) + 1, 1, Math.abs(y - prev) - 1, '#07070d');
+      prev = y;
+    }
+    var bx = 8 + (k.seed % 12);
+    for (var j = 0; j < 4; j++) rect(k, bx + j, 3 + j, 1, 1, '#07070d');   // branch
+    g.globalAlpha = 1;
+  }
+
+  // Palette for a scene key character: '0'-'7' are elements, 'S' is steel (rock colours)
+  function keyPal(ch) {
+    return ch === 'S' ? PAL[6] : PAL[parseInt(ch, 10)];
+  }
+
+  function drawCard(i, c) {
+    var x = CARD_X0 + i * (CARD_W + CARD_GAP), y = CARD_Y, W = CARD_W, H = CARD_H;
+    var accent = keyPal(c.biome.key[0]).tones[3];
+    g.fillStyle = '#13131f';
+    g.fillRect(x, y, W, H);
+    g.fillStyle = accent;                                      // border
+    g.fillRect(x, y, W, 1); g.fillRect(x, y + H - 1, W, 1);
+    g.fillRect(x, y, 1, H); g.fillRect(x + W - 1, y, 1, H);
+    g.textBaseline = 'top';
+    g.textAlign = 'center';
+    g.font = FONT_CARD;
+    g.fillStyle = '#ebebf5';
+    g.fillText(c.biome.name, x + W / 2, y + 5);
+    for (var j = 0; j < 3; j++) {                              // element swatches for the scene
+      var t = keyPal(c.biome.key[j]).tones;
+      g.fillStyle = t[2]; g.fillRect(x + 8 + j * 14, y + 16, 10, 6);
+      g.fillStyle = t[4]; g.fillRect(x + 8 + j * 14, y + 21, 10, 1);
+    }
+    g.fillStyle = '#26263d'; g.fillRect(x + 4, y + 26, W - 8, 1);
+    g.fillStyle = '#ffe27a';
+    g.fillText(c.boon.name, x + W / 2, y + 32);
+    g.fillStyle = '#8c8ca8';
+    g.fillText(c.boon.lines[0], x + W / 2, y + 46);
+    if (c.boon.lines[1]) g.fillText(c.boon.lines[1], x + W / 2, y + 56);
+    g.fillStyle = accent;
+    g.fillText('[' + (i + 1) + ']', x + W / 2, y + H - 12);
+    g.textAlign = 'left';
+  }
+
+  // Backdrop: a deep gradient with a faint, slowly twinkling starfield
+  // Each stage has its own mood: sky colours, a glow along the horizon, and drifting motes
+  //   top/bottom: sky gradient, glow: horizon light, mote/mote2: particle colours,
+  //   vx/vy: how the motes drift (units per second)
+  var MOODS = [
+    { name: 'DUSTY DAWN',   top: '#1d140c', bottom: '#07050a', glow: '#ff9a3c', mote: '#ffcf8a', mote2: '#a8552a', vx: 3,  vy: -1 },
+    { name: 'DEEP TIDE',    top: '#06213a', bottom: '#02060d', glow: '#1f94ff', mote: '#86f4ff', mote2: '#2f6fb0', vx: 0,  vy: -6 },
+    { name: 'EMBER NIGHT',  top: '#2a0b06', bottom: '#080305', glow: '#ff4f0f', mote: '#ffb42a', mote2: '#ff4f0f', vx: 1,  vy: -10 },
+    { name: 'FROSTFALL',    top: '#0e2a38', bottom: '#03080d', glow: '#9cf0ff', mote: '#ffffff', mote2: '#9cf0ff', vx: -2, vy: 7 },
+    { name: 'VOID TIDE',    top: '#1b0a30', bottom: '#040108', glow: '#a040ff', mote: '#ffc6ff', mote2: '#7a3ad0', vx: 0,  vy: 0 }
+  ];
+
+  function moodFor(n) { return MOODS[(stageOf(n) - 1) % MOODS.length]; }
+
+  function drawBackdrop() {
+    var m = moodFor(level);
+    var grad = g.createLinearGradient(0, 0, 0, LH);
+    grad.addColorStop(0, m.top);
+    grad.addColorStop(1, m.bottom);
+    g.fillStyle = grad;
+    g.fillRect(0, 0, LW, LH);
+
+    // Soft horizon glow that breathes
+    var glow = g.createLinearGradient(0, LH * 0.55, 0, LH);
+    glow.addColorStop(0, 'rgba(0,0,0,0)');
+    glow.addColorStop(1, m.glow);
+    g.globalAlpha = 0.10 + 0.04 * Math.sin(time * 0.8);
+    g.fillStyle = glow;
+    g.fillRect(0, LH * 0.55, LW, LH * 0.45);
+
+    // Drifting motes: dust, bubbles, embers, snow or stars depending on the stage
+    for (var i = 0; i < STARS.length; i++) {
+      var st = STARS[i];
+      var x = ((st.x + m.vx * time * (0.5 + st.b)) % LW + LW) % LW;
+      var y = ((st.y + m.vy * time * (0.5 + st.b)) % LH + LH) % LH;
+      g.globalAlpha = 0.15 + 0.35 * st.b * (0.6 + 0.4 * Math.sin(time * 1.5 + st.p));
+      g.fillStyle = st.b > 0.75 ? m.mote : m.mote2;
+      g.fillRect(half(x), half(y), st.b > 0.9 ? 1 : 0.5, st.b > 0.9 ? 1 : 0.5);
+    }
+    g.globalAlpha = 1;
+  }
+
+  // Paddle: a rounded metal bar on a half-unit grid, banded from bright top to dark base
+  var PADDLE_ROWS = ['#22232b', '#eef0f8', '#c8cad6', '#a3a6b6', '#8d8fa0', '#6f7182', '#4c4e5c', '#22232b'];
+  function drawPaddle(col) {
+    var x = half(paddle.x), y = paddle.y + (recoil > 0 ? 1 : 0), w = paddle.w, h = 0.5;
+    g.fillStyle = 'rgba(0,0,0,0.45)';                       // soft shadow
+    g.fillRect(x + 1, y + PADDLE_H, w - 2, h);
+    var flashRows = ['#22232b', '#ffffff', col, col, col, col, col, '#22232b'];
+    var rows = paddleFlash > 0 ? flashRows : PADDLE_ROWS;
+    for (var j = 0; j < 8; j++) {
+      var inset = (j === 0 || j === 7) ? 1 : ((j === 1 || j === 6) ? h : 0);   // rounded ends
+      g.fillStyle = rows[j];
+      g.fillRect(x + inset, y + j * h, w - inset * 2, h);
+    }
+    g.fillStyle = '#22232b';                                 // end caps
+    g.fillRect(x, y + 1, h, 2);
+    g.fillRect(x + w - h, y + 1, h, 2);
+    g.fillStyle = paddleFlash > 0 ? '#ffffff' : '#5b5f70';  // centre grip
+    g.fillRect(x + w / 2 - 3, y + 2, 6, h);
+    if (paddleFlash <= 0) {                                  // gloss sweeping along the top
+      g.fillStyle = 'rgba(255,255,255,0.9)';
+      g.fillRect(half(x + 2 + (time * 22) % (w - 6)), y + h, 2, h);
+    }
+    if (paddle.stunT > 0) {                                  // crackling while stunned
+      g.fillStyle = Math.floor(time * 20) % 2 ? '#ffe81a' : '#ffffff';
+      for (var z = 0; z < 6; z++) g.fillRect(half(x + Math.random() * w), half(y - 1 + Math.random() * 5), 0.5, 0.5);
+    }
+    if (paddle.wideT > 0 && paddle.wideT < 2 && Math.floor(time * 10) % 2) {
+      g.fillStyle = '#ffe27a';                               // the wide paddle is about to end
+      g.fillRect(x, y - 1, w, h);
+    }
+  }
+
+  // Ball: a shaded sphere on a half-unit grid (12x12), tinted by the bounce count
+  function drawBall() {
+    var base = ballRGB(ball.bounces);
+    var light = rgbStr(mixRGB(base, [255, 255, 255], 0.6));
+    var mid = rgbStr(base);
+    var dark = rgbStr(mixRGB(base, [0, 0, 0], 0.4));
+    var rim = rgbStr(mixRGB(base, [0, 0, 0], 0.7));
+    var h = 0.5, ox = half(ball.x - 3), oy = half(ball.y - 3);
+    for (var j = 0; j < 12; j++) {
+      for (var i = 0; i < 12; i++) {
+        var dx = i - 5.5, dy = j - 5.5, d = Math.sqrt(dx * dx + dy * dy);
+        if (d > 5.9) continue;
+        var l = (dx + dy) / 7.8;                             // -1 top-left, +1 bottom-right
+        g.fillStyle = d > 5 ? rim : (l < -0.55 ? light : (l > 0.45 ? dark : mid));
+        g.fillRect(ox + i * h, oy + j * h, h, h);
+      }
+    }
+    g.fillStyle = '#ffffff';                                 // specular glint
+    g.fillRect(ox + 3 * h, oy + 3 * h, 2 * h, h);
+    g.fillRect(ox + 3 * h, oy + 4 * h, h, h);
+  }
+
+  function draw() {
+    var ox = 0, oy = 0;
+    if (shake > 0) {
+      ox = half((Math.random() - 0.5) * shake * 4);
+      oy = half((Math.random() - 0.5) * shake * 4);
+    }
+    g.setTransform(RES, 0, 0, RES, 0, 0);
+    drawBackdrop();
+    g.setTransform(RES, 0, 0, RES, ox * RES, oy * RES);
+
+    // Bricks
+    for (var b = 0; b < bricks.length; b++) {
+      var k = bricks[b];
+      if (!k.alive) continue;
+      if (k.type === 's') { drawSteel(k); continue; }
+      BP.drawBrick(g, k.pal, k.x, k.y, k.s, k.seed, time);
+      if (k.hp < k.maxHp) drawCracks(k);
+      if (k.flash > 0) {
+        g.globalAlpha = k.flash / 0.1 * 0.6;
+        g.fillStyle = '#ffffff';
+        g.fillRect(k.x, k.y, k.w, k.h);
+        g.globalAlpha = 1;
+      }
+    }
+
+    drawBoss();
+    drawPickups();
+    drawParticles();
+    drawShots();
+
+    var col = ballColor(ball.bounces);
+
+    // Shield line along the bottom while a floor save is held
+    if (run.shields > 0) {
+      g.globalAlpha = 0.3 + 0.2 * Math.sin(time * 4) + (shieldFlash > 0 ? 0.4 : 0);
+      g.fillStyle = col;
+      g.fillRect(0, LH - 1, LW, 0.5);
+      g.globalAlpha = 1;
+    }
+
+    // Wall edge flashes in the ball's colour
+    g.fillStyle = col;
+    if (flash.L > 0) { g.globalAlpha = flash.L / 0.14; g.fillRect(0, 0, 0.5, LH); }
+    if (flash.R > 0) { g.globalAlpha = flash.R / 0.14; g.fillRect(LW - 0.5, 0, 0.5, LH); }
+    if (flash.T > 0) { g.globalAlpha = flash.T / 0.14; g.fillRect(0, 0, LW, 0.5); }
+    g.globalAlpha = 1;
+
+    drawPaddle(col);
+
+    // Ball trail: fading dots that grow toward the ball
+    for (var i = 0; i < trail.length; i++) {
+      var tp = trail[i], sz = 0.5 * Math.ceil((i + 1) / trail.length * 4);
+      g.globalAlpha = (i + 1) / (trail.length + 2) * 0.5;
+      g.fillStyle = col;
+      g.fillRect(half(tp.x - sz / 2), half(tp.y - sz / 2), sz, sz);
+    }
+    g.globalAlpha = 1;
+
+    drawBall();
+
+    // HUD
+    g.fillStyle = '#8c8ca8';
+    g.font = FONT_HUD;
+    g.textBaseline = 'top';
+    g.textAlign = 'left';
+    g.fillText('SCORE ' + score, 4, 4);                  // row 1: score, stage
+    g.textAlign = 'right';
+    g.fillText('STAGE ' + stageOf(level) + '-' + levelInStage(level), LW - 4, 4);
+    g.textAlign = 'center';                                // row 2: bounces, lives, combo
+    g.fillText('LIVES ' + lives, LW / 2, 13);
+    g.textAlign = 'left';
+    g.fillStyle = col;
+    g.fillText('BOUNCES ' + ball.bounces, 4, 13);
+    if (combo >= 2 && time - lastBreak < COMBO_WINDOW + 0.4) {
+      g.textAlign = 'right';
+      g.fillStyle = comboColor;
+      g.fillText('x' + combo + ' COMBO', LW - 4, 13);
+    }
+
+    drawBossBar();
+
+    // Overlays
+    g.textAlign = 'center';
+    g.fillStyle = '#ebebf5';
+    if (state === 'intro') {
+      g.fillStyle = 'rgba(6, 6, 12, 0.78)';            // keep the intro readable over tall levels
+      g.fillRect(0, 92, LW, 52);
+      g.fillStyle = '#ebebf5';
+      g.font = FONT_BIG;
+      g.fillText('STAGE ' + stageOf(level), LW / 2, 96);
+      g.font = FONT_CARD;
+      g.fillStyle = moodFor(level).mote;
+      g.fillText(moodFor(level).name, LW / 2, 106);
+      g.font = FONT_BIG;
+      g.fillStyle = '#ebebf5';
+      g.font = FONT_HUD;
+      g.fillText(boss ? 'BOSS FIGHT' : 'LEVEL ' + levelInStage(level) + ' OF ' + LEVELS_PER_STAGE, LW / 2, 116);
+      g.fillStyle = col;
+      g.fillText(levelName, LW / 2, 126);
+      g.fillStyle = '#8c8ca8';
+      g.fillText(run.names.length ? run.names.join(' ') : 'NO BOONS YET', LW / 2, 136);
+    }
+    if (state === 'ready') g.fillText('CLICK / SPACE', LW / 2, 112);
+    if (state === 'choose') {
+      g.fillStyle = 'rgba(6, 6, 12, 0.94)';          // dim the field behind the cards
+      g.fillRect(0, 22, LW, 112);
+      g.fillStyle = '#ffe27a';
+      var title = levelInStage(level) === LEVELS_PER_STAGE ? 'STAGE ' + stageOf(level) + ' CLEAR' : 'CLEARED';
+      g.fillText(title + '  +' + clearBonus, LW / 2, 24);
+      for (var ci = 0; ci < choices.length; ci++) drawCard(ci, choices[ci]);
+    }
+    if (state === 'won') {
+      g.fillStyle = 'rgba(6, 6, 12, 0.85)';
+      g.fillRect(0, 90, LW, 56);
+      g.font = FONT_BIG;
+      g.fillStyle = '#ffe27a';
+      g.fillText('YOU WIN', LW / 2, 98);
+      g.font = FONT_HUD;
+      g.fillStyle = '#ebebf5';
+      g.fillText('ALL ' + STAGES + ' STAGES CLEAR', LW / 2, 112);
+      g.fillText('SCORE ' + score, LW / 2, 122);
+      g.fillStyle = '#8c8ca8';
+      g.fillText('SPACE TO PLAY AGAIN', LW / 2, 134);
+    }
+    if (state === 'over') {
+      g.font = FONT_BIG;
+      g.fillText('GAME OVER', LW / 2, 110);
+      g.font = FONT_HUD;
+      g.fillStyle = '#8c8ca8';
+      g.fillText('SPACE TO RETRY', LW / 2, 124);
+    }
+    g.textAlign = 'left';
+
+    g.setTransform(RES, 0, 0, RES, 0, 0);
+  }
+
+  // ---------- Input ----------
+  keys = {};
+  window.addEventListener('keydown', function (e) {
+    if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].indexOf(e.key) !== -1) { keys[e.key] = true; e.preventDefault(); }
+    if (e.key === 'w' || e.key === 'W' || e.key === 's' || e.key === 'S') keys[e.key] = true;
+    if (state === 'choose' && (e.key === '1' || e.key === '2' || e.key === '3')) {
+      pickPath(parseInt(e.key, 10) - 1);
+      return;
+    }
+    if (e.code === 'Space') {
+      e.preventDefault();
+      if (state === 'over' || state === 'won') reset(true); else launch();
+    }
+  });
+  window.addEventListener('keyup', function (e) { keys[e.key] = false; });
+  window.addEventListener('blur', function () { keys = {}; });
+
+  function toLogicalX(clientX) {
+    var rect = cv.getBoundingClientRect();
+    return (clientX - rect.left) / rect.width * LW;
+  }
+
+  function toLogicalY(clientY) {
+    var rect = cv.getBoundingClientRect();
+    return (clientY - rect.top) / rect.height * LH;
+  }
+
+  pointerX = null;
+  var lastPY = null;
+  paddleDY = 0;
+  cv.addEventListener('pointermove', function (e) {
+    pointerX = toLogicalX(e.clientX);
+    var py = toLogicalY(e.clientY);
+    if (lastPY !== null) paddleDY += py - lastPY;
+    lastPY = py;
+  });
+  cv.addEventListener('pointerleave', function () { pointerX = null; lastPY = null; });
+  cv.addEventListener('pointerdown', function (e) {
+    e.preventDefault();
+    pointerX = toLogicalX(e.clientX);
+    lastPY = toLogicalY(e.clientY);
+    if (state === 'choose') {
+      var i = cardAt(pointerX, toLogicalY(e.clientY));
+      if (i >= 0) pickPath(i);
+      return;
+    }
+    if (state === 'over' || state === 'won') reset(true); else launch();
+  });
+
+  // ---------- Touch pad (below the playfield) ----------
+  padDX = 0;
+  padDY = 0;
+
+  function tapAction() {
+    if (state === 'choose') return;      // taps on the pad don't pick a path
+    if (state === 'over' || state === 'won') reset(true); else launch();
+  }
+
+  var drag = document.getElementById('drag');
+  var padLast = null, padStart = null;
+  var PAD_GAIN = 1.6;                    // how far the paddle moves per pad movement
+
+  drag.addEventListener('pointerdown', function (e) {
+    e.preventDefault();
+    audio();
+    drag.setPointerCapture(e.pointerId);
+    padLast = { x: e.clientX, y: e.clientY };
+    padStart = { t: performance.now(), moved: 0 };
+  });
+
+  drag.addEventListener('pointermove', function (e) {
+    if (!padLast) return;
+    var rect = drag.getBoundingClientRect();
+    var dx = e.clientX - padLast.x, dy = e.clientY - padLast.y;
+    padLast = { x: e.clientX, y: e.clientY };
+    padStart.moved += Math.abs(dx) + Math.abs(dy);
+    padDX += dx / rect.width * LW * PAD_GAIN;
+    padDY += dy / rect.height * LH * PAD_GAIN;
+  });
+
+  function padRelease() {
+    if (!padStart) return;
+    var quickTap = performance.now() - padStart.t < 300 && padStart.moved < 12;
+    padStart = null;
+    padLast = null;
+    if (quickTap) tapAction();
+  }
+
+  drag.addEventListener('pointerup', padRelease);
+  drag.addEventListener('pointercancel', function () { padStart = null; padLast = null; });
+
+  // Arrow buttons hold the matching key down while pressed
+  document.querySelectorAll('#btns button[data-key]').forEach(function (b) {
+    var key = b.getAttribute('data-key');
+    function press(e) { e.preventDefault(); audio(); keys[key] = true; b.classList.add('pressed'); }
+    function release() { keys[key] = false; b.classList.remove('pressed'); }
+    b.addEventListener('pointerdown', press);
+    b.addEventListener('pointerup', release);
+    b.addEventListener('pointerleave', release);
+    b.addEventListener('pointercancel', release);
+  });
+
+  var launchBtn = document.getElementById('launch');
+  launchBtn.addEventListener('pointerdown', function (e) {
+    e.preventDefault();
+    tapAction();
+  });
+
+  // ---------- Loop ----------
+  time = 0;
+  reset(true);
+  var last = performance.now();
+  function frame(now) {
+    var dt = Math.min((now - last) / 1000, 1 / 30);
+    last = now;
+    step(dt);
+    draw();
+    window.requestAnimationFrame(frame);
+  }
+  window.requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
