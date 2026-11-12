@@ -90,7 +90,8 @@ CLEAR A LEVEL, THEN CHOOSE YOUR PATH. EVERY SCENE IS DIFFERENT.</p>
 
   // The run: 5 stages of 5 levels each
   var LEVELS_PER_STAGE = 5, STAGES = 5, TOTAL_LEVELS = LEVELS_PER_STAGE * STAGES;
-  var MAX_STEEL = 5;                    // most steel pieces allowed in a level (none in stage 1)
+  // Most steel pieces allowed per level, by stage: none in stage 1, then a few more each stage
+  var STEEL_BY_STAGE = [0, 2, 3, 4, 5];
   function stageOf(n) { return Math.floor((n - 1) / LEVELS_PER_STAGE) + 1; }
   function levelInStage(n) { return (n - 1) % LEVELS_PER_STAGE + 1; }
   var PICKUP_CHANCE = 0.12, WIDE_TIME = 8;
@@ -480,7 +481,7 @@ CLEAR A LEVEL, THEN CHOOSE YOUR PATH. EVERY SCENE IS DIFFERENT.</p>
 
     if (chance(0.35)) pick(SURPRISES)(g, C, R);
 
-    limitSteel(g, C, R, n <= LEVELS_PER_STAGE ? 0 : MAX_STEEL);
+    limitSteel(g, C, R, STEEL_BY_STAGE[Math.min(STEEL_BY_STAGE.length - 1, Math.floor((n - 1) / LEVELS_PER_STAGE))]);
 
     // The ball fits down the sides of the grid only when the margin is wide enough
     var margin = (LW - (C * cellWFor(s) - GAP_X)) / 2;
@@ -817,6 +818,7 @@ CLEAR A LEVEL, THEN CHOOSE YOUR PATH. EVERY SCENE IS DIFFERENT.</p>
     var cellW = cellWFor(s), cellH = cellHFor(s);
     var x0 = Math.floor((LW - (lv.cols * cellW - GAP_X)) / 2);
     levelName = lv.name;
+    run.recent = (run.recent || []).concat(lv.name).slice(-4);
     bricks = [];
     for (var r = 0; r < lv.rows.length; r++) {
       var row = lv.rows[r];
@@ -902,7 +904,10 @@ CLEAR A LEVEL, THEN CHOOSE YOUR PATH. EVERY SCENE IS DIFFERENT.</p>
   // ---------- Path choice ----------
   // Three random scenes, each with a random boon. Pick one to continue the run.
   function makeChoices() {
-    var bs = BIOMES.slice(), bo = BOONS.slice(), out = [];
+    var bo = BOONS.slice(), out = [];
+    var recent = run.recent || [];
+    var bs = BIOMES.filter(function (b) { return recent.indexOf(b.name) < 0; });   // skip recently played scenes
+    if (bs.length < 3) bs = BIOMES.slice();
     var next = isBossLevel(level + 1) ? bossFor(level + 1) : null;
     for (var i = 0; i < 3; i++) {
       var bi = Math.floor(Math.random() * bs.length);
@@ -1717,17 +1722,43 @@ CLEAR A LEVEL, THEN CHOOSE YOUR PATH. EVERY SCENE IS DIFFERENT.</p>
   }
 
   // Backdrop: a deep gradient with a faint, slowly twinkling starfield
+  // Each stage has its own mood: sky colours, a glow along the horizon, and drifting motes
+  //   top/bottom: sky gradient, glow: horizon light, mote/mote2: particle colours,
+  //   vx/vy: how the motes drift (units per second)
+  var MOODS = [
+    { name: 'DUSTY DAWN',   top: '#1d140c', bottom: '#07050a', glow: '#ff9a3c', mote: '#ffcf8a', mote2: '#a8552a', vx: 3,  vy: -1 },
+    { name: 'DEEP TIDE',    top: '#06213a', bottom: '#02060d', glow: '#1f94ff', mote: '#86f4ff', mote2: '#2f6fb0', vx: 0,  vy: -6 },
+    { name: 'EMBER NIGHT',  top: '#2a0b06', bottom: '#080305', glow: '#ff4f0f', mote: '#ffb42a', mote2: '#ff4f0f', vx: 1,  vy: -10 },
+    { name: 'FROSTFALL',    top: '#0e2a38', bottom: '#03080d', glow: '#9cf0ff', mote: '#ffffff', mote2: '#9cf0ff', vx: -2, vy: 7 },
+    { name: 'VOID TIDE',    top: '#1b0a30', bottom: '#040108', glow: '#a040ff', mote: '#ffc6ff', mote2: '#7a3ad0', vx: 0,  vy: 0 }
+  ];
+
+  function moodFor(n) { return MOODS[(stageOf(n) - 1) % MOODS.length]; }
+
   function drawBackdrop() {
+    var m = moodFor(level);
     var grad = g.createLinearGradient(0, 0, 0, LH);
-    grad.addColorStop(0, '#0d0c1c');
-    grad.addColorStop(1, '#050509');
+    grad.addColorStop(0, m.top);
+    grad.addColorStop(1, m.bottom);
     g.fillStyle = grad;
     g.fillRect(0, 0, LW, LH);
+
+    // Soft horizon glow that breathes
+    var glow = g.createLinearGradient(0, LH * 0.55, 0, LH);
+    glow.addColorStop(0, 'rgba(0,0,0,0)');
+    glow.addColorStop(1, m.glow);
+    g.globalAlpha = 0.10 + 0.04 * Math.sin(time * 0.8);
+    g.fillStyle = glow;
+    g.fillRect(0, LH * 0.55, LW, LH * 0.45);
+
+    // Drifting motes: dust, bubbles, embers, snow or stars depending on the stage
     for (var i = 0; i < STARS.length; i++) {
       var st = STARS[i];
-      g.globalAlpha = 0.15 + 0.25 * st.b * (0.6 + 0.4 * Math.sin(time * 1.5 + st.p));
-      g.fillStyle = st.b > 0.8 ? '#cfd6ff' : '#7f86b8';
-      g.fillRect(half(st.x), half(st.y), 0.5, 0.5);
+      var x = ((st.x + m.vx * time * (0.5 + st.b)) % LW + LW) % LW;
+      var y = ((st.y + m.vy * time * (0.5 + st.b)) % LH + LH) % LH;
+      g.globalAlpha = 0.15 + 0.35 * st.b * (0.6 + 0.4 * Math.sin(time * 1.5 + st.p));
+      g.fillStyle = st.b > 0.75 ? m.mote : m.mote2;
+      g.fillRect(half(x), half(y), st.b > 0.9 ? 1 : 0.5, st.b > 0.9 ? 1 : 0.5);
     }
     g.globalAlpha = 1;
   }
@@ -1871,8 +1902,16 @@ CLEAR A LEVEL, THEN CHOOSE YOUR PATH. EVERY SCENE IS DIFFERENT.</p>
     g.textAlign = 'center';
     g.fillStyle = '#ebebf5';
     if (state === 'intro') {
+      g.fillStyle = 'rgba(6, 6, 12, 0.78)';            // keep the intro readable over tall levels
+      g.fillRect(0, 92, LW, 52);
+      g.fillStyle = '#ebebf5';
       g.font = FONT_BIG;
-      g.fillText('STAGE ' + stageOf(level), LW / 2, 104);
+      g.fillText('STAGE ' + stageOf(level), LW / 2, 96);
+      g.font = FONT_CARD;
+      g.fillStyle = moodFor(level).mote;
+      g.fillText(moodFor(level).name, LW / 2, 106);
+      g.font = FONT_BIG;
+      g.fillStyle = '#ebebf5';
       g.font = FONT_HUD;
       g.fillText(boss ? 'BOSS FIGHT' : 'LEVEL ' + levelInStage(level) + ' OF ' + LEVELS_PER_STAGE, LW / 2, 116);
       g.fillStyle = col;
