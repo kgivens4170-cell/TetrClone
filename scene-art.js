@@ -27,8 +27,42 @@
     };
   }
 
+  // ---------- stage colour grading ----------
+  // Each stage grades every colour of a scene: a tint (applied more to bright colours,
+  // so shadows stay dark), saturation and brightness. GRADE is set while a scene draws.
+  var GRADES = [
+    null,
+    { tint: [255, 176, 112], amt: 0.30, sat: 1.0,  bright: 1.05 },   // 1 Dusty Dawn: warm
+    { tint: [74, 138, 255],  amt: 0.34, sat: 0.95, bright: 0.92 },   // 2 Deep Tide: cool blue
+    { tint: [255, 72, 40],   amt: 0.38, sat: 1.05, bright: 0.86 },   // 3 Ember Night: red
+    { tint: [200, 236, 255], amt: 0.40, sat: 0.55, bright: 1.04 },   // 4 Frostfall: pale, icy
+    { tint: [168, 72, 255],  amt: 0.42, sat: 0.9,  bright: 0.80 }    // 5 Void Tide: violet
+  ];
+  var GRADE = null;
+
+  function makeGrade(stage) {
+    var gr = GRADES[stage];
+    if (!gr) return null;
+    var cache = {};
+    return function (col) {
+      if (cache[col]) return cache[col];
+      var m = /^#([0-9a-f]{6})$/i.exec(col);
+      if (!m) return col;
+      var n = parseInt(m[1], 16), rgb = [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+      var l = 0.3 * rgb[0] + 0.59 * rgb[1] + 0.11 * rgb[2];
+      var out = rgb.map(function (v, i) {
+        v = l + (v - l) * gr.sat;                                         // saturation
+        v = v * (1 - gr.amt) + gr.tint[i] * (l / 255) * 1.4 * gr.amt;      // tint, scaled by brightness
+        return Math.max(0, Math.min(255, Math.round(v * gr.bright)));
+      });
+      return (cache[col] = 'rgb(' + out[0] + ',' + out[1] + ',' + out[2] + ')');
+    };
+  }
+
+  function G(col) { return GRADE ? GRADE(col) : col; }
+
   function rect(c, x, y, w, h, col) {
-    c.fillStyle = col;
+    c.fillStyle = G(col);
     c.fillRect(x, y, w, h);
   }
 
@@ -36,15 +70,15 @@
 
   function sky(c, top, bottom, y0, y1) {
     var g = c.createLinearGradient(0, y0, 0, y1);
-    g.addColorStop(0, top);
-    g.addColorStop(1, bottom);
+    g.addColorStop(0, G(top));
+    g.addColorStop(1, G(bottom));
     c.fillStyle = g;
     c.fillRect(0, y0, LW, y1 - y0);
   }
 
   // A blocky filled ellipse, one unit per row
   function blob(c, cx, cy, rx, ry, col) {
-    c.fillStyle = col;
+    c.fillStyle = G(col);
     for (var dy = -ry; dy <= ry; dy++) {
       var w = Math.round(rx * Math.sqrt(Math.max(0, 1 - (dy * dy) / (ry * ry || 1))));
       if (w > 0) c.fillRect(Math.round(cx - w), Math.round(cy + dy), 2 * w, 1);
@@ -558,10 +592,82 @@
     }
   };
 
+  // ---------- stage weather, drawn over every scene ----------
+  function weather(c, t, stage, seed) {
+    var i, ph;
+    if (stage === 1) {                                     // Dusty Dawn: light rays and dust
+      for (i = 0; i < 4; i++) {
+        c.globalAlpha = 0.05 + 0.03 * Math.sin(t * 0.4 + i);
+        var rx = wrap(i * 60 + t * 3, LW + 80) - 40;
+        for (var y = 0; y < LH; y += 2) c.fillStyle = '#ffd8a0', c.fillRect(Math.round(rx + y * 0.5), y, 10, 2);
+      }
+      c.globalAlpha = 0.6;
+      for (i = 0; i < 18; i++) {
+        c.fillStyle = '#ffe0b0';
+        c.fillRect(half(wrap(i * 47 + t * 4, LW)), half(wrap(i * 29 + Math.sin(t * 0.6 + i) * 6, LH)), 0.5, 0.5);
+      }
+    } else if (stage === 2) {                              // Deep Tide: low mist and drizzle
+      for (i = 0; i < 3; i++) {
+        c.globalAlpha = 0.10;
+        var mx = wrap(i * 80 + t * (5 + i * 2), LW + 120) - 60;
+        c.fillStyle = '#9fc8ff';
+        for (var dy = -3; dy <= 3; dy++) c.fillRect(Math.round(mx - 50 + Math.abs(dy) * 6), 150 + i * 8 + dy, 100 - Math.abs(dy) * 12, 1);
+      }
+      c.globalAlpha = 0.35;
+      c.fillStyle = '#8ab8ff';
+      for (i = 0; i < 30; i++) c.fillRect(half(wrap(i * 37 + t * 6, LW)), half(wrap(i * 53 + t * 90, LH)), 0.5, 2);
+    } else if (stage === 3) {                              // Ember Night: falling ash, rising embers
+      c.globalAlpha = 0.5;
+      for (i = 0; i < 22; i++) {
+        c.fillStyle = '#6a5a5a';
+        c.fillRect(half(wrap(i * 41 + Math.sin(t + i) * 6, LW)), half(wrap(i * 31 + t * 12, LH)), 1, 0.5);
+      }
+      for (i = 0; i < 14; i++) {
+        ph = wrap(t * 0.25 + i / 14, 1);
+        c.globalAlpha = 0.9 * (1 - ph);
+        c.fillStyle = i % 2 ? '#ffb42a' : '#ff4f0f';
+        c.fillRect(half(wrap(i * 53 + Math.sin(ph * 8 + i) * 5, LW)), half(LH - ph * LH), 0.5, 0.5);
+      }
+    } else if (stage === 4) {                              // Frostfall: snow
+      for (i = 0; i < 45; i++) {
+        var big = i % 5 === 0;
+        c.globalAlpha = big ? 0.9 : 0.6;
+        c.fillStyle = '#ffffff';
+        c.fillRect(half(wrap(i * 43 + Math.sin(t * 0.8 + i) * 8 + t * 3, LW)), half(wrap(i * 29 + t * (big ? 16 : 10), LH)),
+                   big ? 1 : 0.5, big ? 1 : 0.5);
+      }
+    } else if (stage === 5) {                              // Void Tide: aurora and stars
+      for (i = 0; i < 2; i++) {
+        c.globalAlpha = 0.12;
+        c.fillStyle = i ? '#5affc8' : '#d05cff';
+        for (var x = 0; x < LW; x += 2) {
+          var ay = 18 + i * 14 + Math.sin(x * 0.04 + t * 0.6 + i * 2) * 8;
+          c.fillRect(x, Math.round(ay), 2, 5 + Math.round(Math.sin(x * 0.1 + t) * 2));
+        }
+      }
+      for (i = 0; i < 16; i++) {
+        c.globalAlpha = Math.max(0, Math.sin(t * 1.7 + i * 2.3));
+        c.fillStyle = '#ffc6ff';
+        c.fillRect(half(wrap(i * 61, LW)), half(wrap(i * 37, 110)), 0.5, 0.5);
+      }
+    }
+    c.globalAlpha = 1;
+  }
+
   var api = {
-    make: function (name, seed) {
+    // stage (1-5) grades the colours and adds that stage's weather; omit it for the plain scene
+    make: function (name, seed, stage) {
       var f = SCENES[name];
-      return f ? f(seed | 0) : null;
+      if (!f) return null;
+      var inner = f(seed | 0), grade = makeGrade(stage | 0);
+      return {
+        paint: function (c) { GRADE = grade; try { inner.paint(c); } finally { GRADE = null; } },
+        live: function (c, t) {
+          GRADE = grade;
+          try { inner.live(c, t); } finally { GRADE = null; }
+          weather(c, t, stage | 0, seed | 0);
+        }
+      };
     },
     names: Object.keys(SCENES)
   };

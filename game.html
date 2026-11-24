@@ -849,7 +849,7 @@ CAPSULES: W WIDE PADDLE, G SIDE GUNS, P PIERCE. CHOOSE YOUR PATH AFTER EACH LEVE
     var cellW = cellWFor(s), cellH = cellHFor(s);
     var x0 = Math.floor((LW - (lv.cols * cellW - GAP_X)) / 2);
     levelName = lv.name;
-    sceneArt = window.SceneArt ? SceneArt.make(lv.name, n * 7919 + 13) : null;
+    sceneArt = window.SceneArt ? SceneArt.make(lv.name, n * 7919 + 13, stageOf(n)) : null;
     sceneCache = null;
     run.recent = (run.recent || []).concat(lv.name).slice(-4);
     bricks = [];
@@ -868,12 +868,12 @@ CAPSULES: W WIDE PADDLE, G SIDE GUNS, P PIERCE. CHOOSE YOUR PATH AFTER EACH LEVE
         };
         if (ch === 'S') {
           k.type = 's';
-          k.pal = PAL[6];
+          k.pal = stagePal(6, n);
         } else if (ch >= 'a' && ch <= 'h') {
           k.type = 'h'; k.hp = 2; k.maxHp = 2;
-          k.pal = PAL[ch.charCodeAt(0) - 97];
+          k.pal = stagePal(ch.charCodeAt(0) - 97, n);
         } else {
-          k.pal = PAL[parseInt(ch, 10)];
+          k.pal = stagePal(parseInt(ch, 10), n);
         }
         bricks.push(k);
       }
@@ -1029,7 +1029,7 @@ CAPSULES: W WIDE PADDLE, G SIDE GUNS, P PIERCE. CHOOSE YOUR PATH AFTER EACH LEVE
     var def = bossFor(n), st = stageOf(n), s = scaleFor(n);
     var hp = 10 + 5 * st;
     boss = {
-      def: def, mask: bossMask(def), x: (LW - BOSS_W) / 2, y: BOSS_Y,
+      def: def, pal: stagePal(def.el, n), mask: bossMask(def), x: (LW - BOSS_W) / 2, y: BOSS_Y,
       hp: hp, maxHp: hp, flash: 0, phase: 0, speed: 0.55 + 0.12 * st,
       atk: 2.5, atkEvery: Math.max(1.1, 2.5 - 0.25 * st), boomT: 0, seed: n * 31
     };
@@ -1045,7 +1045,7 @@ CAPSULES: W WIDE PADDLE, G SIDE GUNS, P PIERCE. CHOOSE YOUR PATH AFTER EACH LEVE
       bricks.push({
         x: x0 + c * cellW, y: gy, s: s, w: BW * s, h: BH * s, alive: true,
         type: hard ? 'h' : 'n', hp: hard ? 2 : 1, maxHp: hard ? 2 : 1, flash: 0,
-        seed: c + n * 97, pal: PAL[def.el]
+        seed: c + n * 97, pal: stagePal(def.el, n)
       });
     }
     curSpeed = speedFor(n);
@@ -1091,7 +1091,7 @@ CAPSULES: W WIDE PADDLE, G SIDE GUNS, P PIERCE. CHOOSE YOUR PATH AFTER EACH LEVE
         shots.splice(i, 1);
         paddle.stunT = 0.9;                              // the paddle freezes briefly
         shake = Math.min(1, shake + 0.5);
-        impactSparks(o.x, paddle.y, 0, -1, 10, PAL[boss ? boss.def.el : 3].tones[4]);
+        impactSparks(o.x, paddle.y, 0, -1, 10, (boss ? boss.pal : PAL[3]).tones[4]);
         sfxStun();
       }
     }
@@ -1107,7 +1107,7 @@ CAPSULES: W WIDE PADDLE, G SIDE GUNS, P PIERCE. CHOOSE YOUR PATH AFTER EACH LEVE
     boss.flash = 0.12;
     score += Math.round(25 * run.scoreMul);
     shake = Math.min(1, shake + 0.4);
-    var pal = PAL[boss.def.el];
+    var pal = boss.pal;
     ringAt(ball.x, ball.y, pal.tones[4], 0.3);
     spawnSparks((SHATTER[pal.fx] || SHATTER.ember).sparks, pal, ball.x, ball.y, ball.x, ball.y, ball.vx >= 0 ? 1 : -1);
     sfxBossHit(pal.fx);
@@ -1128,7 +1128,7 @@ CAPSULES: W WIDE PADDLE, G SIDE GUNS, P PIERCE. CHOOSE YOUR PATH AFTER EACH LEVE
     stateT -= dt;
     boss.boomT -= dt;
     boss.flash = 0.05;
-    var pal = PAL[boss.def.el];
+    var pal = boss.pal;
     if (boss.boomT <= 0) {
       boss.boomT = 0.12;
       var bx = boss.x + Math.random() * BOSS_W, by = boss.y + 6 + Math.random() * (BOSS_H - 6);
@@ -1161,7 +1161,7 @@ CAPSULES: W WIDE PADDLE, G SIDE GUNS, P PIERCE. CHOOSE YOUR PATH AFTER EACH LEVE
 
   function drawBoss() {
     if (!boss) return;
-    var pal = PAL[boss.def.el], t = pal.tones, m = boss.mask;
+    var pal = boss.pal, t = pal.tones, m = boss.mask;
     var bx = half(boss.x), by = half(boss.y), P = BOSS_PX;
     for (var y = 0; y < BOSS_ROWS; y++) {
       for (var x = 0; x < BOSS_COLS; x++) {
@@ -1208,7 +1208,7 @@ CAPSULES: W WIDE PADDLE, G SIDE GUNS, P PIERCE. CHOOSE YOUR PATH AFTER EACH LEVE
 
   function drawShots() {
     for (var i = 0; i < shots.length; i++) {
-      var o = shots[i], t = PAL[boss ? boss.def.el : 3].tones;
+      var o = shots[i], t = (boss ? boss.pal : PAL[3]).tones;
       var x = half(o.x), y = half(o.y);
       g.globalAlpha = 0.35; g.fillStyle = t[2];                       // short trail
       g.fillRect(half(o.x - o.vx * 0.04) - 0.5, half(o.y - o.vy * 0.04) - 0.5, 1, 1);
@@ -1221,7 +1221,7 @@ CAPSULES: W WIDE PADDLE, G SIDE GUNS, P PIERCE. CHOOSE YOUR PATH AFTER EACH LEVE
 
   function drawBossBar() {
     if (!boss) return;
-    var t = PAL[boss.def.el].tones, bw = 140, bxp = (LW - bw) / 2;
+    var t = boss.pal.tones, bw = 140, bxp = (LW - bw) / 2;
     var frac = Math.max(0, boss.hp) / boss.maxHp;
     g.font = FONT_CARD; g.textAlign = 'center'; g.textBaseline = 'top';
     g.fillStyle = t[3];
@@ -1499,7 +1499,7 @@ CAPSULES: W WIDE PADDLE, G SIDE GUNS, P PIERCE. CHOOSE YOUR PATH AFTER EACH LEVE
         boss.hp -= 0.25;                                  // bullets only chip at a boss
         boss.flash = 0.06;
         score += Math.round(5 * run.scoreMul);
-        impactSparks(o.x, o.y, 0, 1, 3, PAL[boss.def.el].tones[4]);
+        impactSparks(o.x, o.y, 0, 1, 3, boss.pal.tones[4]);
         tone(160, 0.06, 'square', 0.06, 90);
         hit = true;
         if (boss.hp <= 0) { bullets.splice(i, 1); bossDefeated(); return; }
@@ -1844,14 +1844,30 @@ CAPSULES: W WIDE PADDLE, G SIDE GUNS, P PIERCE. CHOOSE YOUR PATH AFTER EACH LEVE
   //   top/bottom: sky gradient, glow: horizon light, mote/mote2: particle colours,
   //   vx/vy: how the motes drift (units per second)
   var MOODS = [
-    { name: 'DUSTY DAWN',   top: '#1d140c', bottom: '#07050a', glow: '#ff9a3c', mote: '#ffcf8a', mote2: '#a8552a', vx: 3,  vy: -1 },
-    { name: 'DEEP TIDE',    top: '#06213a', bottom: '#02060d', glow: '#1f94ff', mote: '#86f4ff', mote2: '#2f6fb0', vx: 0,  vy: -6 },
-    { name: 'EMBER NIGHT',  top: '#2a0b06', bottom: '#080305', glow: '#ff4f0f', mote: '#ffb42a', mote2: '#ff4f0f', vx: 1,  vy: -10 },
-    { name: 'FROSTFALL',    top: '#0e2a38', bottom: '#03080d', glow: '#9cf0ff', mote: '#ffffff', mote2: '#9cf0ff', vx: -2, vy: 7 },
-    { name: 'VOID TIDE',    top: '#1b0a30', bottom: '#040108', glow: '#a040ff', mote: '#ffc6ff', mote2: '#7a3ad0', vx: 0,  vy: 0 }
+    { name: 'DUSTY DAWN',   tint: '#ffb070', top: '#1d140c', bottom: '#07050a', glow: '#ff9a3c', mote: '#ffcf8a', mote2: '#a8552a', vx: 3,  vy: -1 },
+    { name: 'DEEP TIDE',    tint: '#5a9aff', top: '#06213a', bottom: '#02060d', glow: '#1f94ff', mote: '#86f4ff', mote2: '#2f6fb0', vx: 0,  vy: -6 },
+    { name: 'EMBER NIGHT',  tint: '#ff5a3a', top: '#2a0b06', bottom: '#080305', glow: '#ff4f0f', mote: '#ffb42a', mote2: '#ff4f0f', vx: 1,  vy: -10 },
+    { name: 'FROSTFALL',    tint: '#c8ecff', top: '#0e2a38', bottom: '#03080d', glow: '#9cf0ff', mote: '#ffffff', mote2: '#9cf0ff', vx: -2, vy: 7 },
+    { name: 'VOID TIDE',    tint: '#b060ff', top: '#1b0a30', bottom: '#040108', glow: '#a040ff', mote: '#ffc6ff', mote2: '#7a3ad0', vx: 0,  vy: 0 }
   ];
 
   function moodFor(n) { return MOODS[(stageOf(n) - 1) % MOODS.length]; }
+
+  // Each stage gives every brick a slight tint in its mood colour. The tint is a multiply
+  // blend, so dark tones stay dark and each element stays recognisable.
+  var stagePals = {};
+  function stagePal(el, n) {
+    var st = stageOf(n), key = el + '@' + st;
+    if (stagePals[key]) return stagePals[key];
+    var base = PAL[el], tint = hexToRgb(moodFor(n).tint);
+    var tones = base.tones.map(function (h, i) {
+      var c = hexToRgb(h);
+      var mul = [Math.min(255, c[0] * tint[0] / 255 * 1.3), Math.min(255, c[1] * tint[1] / 255 * 1.3), Math.min(255, c[2] * tint[2] / 255 * 1.3)];
+      return rgbStr(mixRGB(c, mul, i === 4 ? 0.12 : 0.3));   // highlights keep most of their sparkle
+    });
+    stagePals[key] = { id: base.id + '@' + st, name: base.name, element: base.element, tones: tones, glow: base.glow, fx: base.fx };
+    return stagePals[key];
+  }
 
   // The still landscape, painted once at the screen's resolution and reused every frame
   function sceneCanvas() {
@@ -1872,11 +1888,8 @@ CAPSULES: W WIDE PADDLE, G SIDE GUNS, P PIERCE. CHOOSE YOUR PATH AFTER EACH LEVE
     if (sceneArt) {
       g.imageSmoothingEnabled = false;
       g.drawImage(sceneCanvas(), 0, 0, LW, LH);
-      sceneArt.live(g, time);                         // flowing water, smoke, rain...
-      g.globalAlpha = 0.18;                           // the stage mood tints the scene
-      g.fillStyle = m.glow;
-      g.fillRect(0, 0, LW, LH);
-      g.globalAlpha = 0.4;                            // dim it so bricks and ball stand out
+      sceneArt.live(g, time);                         // flowing water, smoke, rain, and the stage's weather
+      g.globalAlpha = 0.38;                           // dim it so bricks and ball stand out
       g.fillStyle = '#05050a';
       g.fillRect(0, 0, LW, LH);
       g.globalAlpha = 1;
