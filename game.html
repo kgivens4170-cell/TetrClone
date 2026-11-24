@@ -62,9 +62,10 @@
   </div>
 </div>
 <p id="hint">MOVE: MOUSE / TOUCH PAD / ← → ↑ ↓ (W S) &nbsp; LAUNCH: CLICK / SPACE<br>
-CLEAR A LEVEL, THEN CHOOSE YOUR PATH. EVERY SCENE IS DIFFERENT.</p>
+CAPSULES: W WIDE PADDLE, G SIDE GUNS, P PIERCE. CHOOSE YOUR PATH AFTER EACH LEVEL.</p>
 
 <script src="brick-palettes.js"></script>
+<script src="scene-art.js"></script>
 <script>
 (function () {
   'use strict';
@@ -94,7 +95,18 @@ CLEAR A LEVEL, THEN CHOOSE YOUR PATH. EVERY SCENE IS DIFFERENT.</p>
   var STEEL_BY_STAGE = [0, 2, 3, 4, 5];
   function stageOf(n) { return Math.floor((n - 1) / LEVELS_PER_STAGE) + 1; }
   function levelInStage(n) { return (n - 1) % LEVELS_PER_STAGE + 1; }
-  var PICKUP_CHANCE = 0.12, WIDE_TIME = 8;
+  var PICKUP_CHANCE = 0.15, WIDE_TIME = 8, GUN_TIME = 10, GUN_EVERY = 0.3;
+  // Capsule kinds: chance weight, colours (outline, body, lit, pulse) and the letter on it
+  var PICKUP_KINDS = {
+    wide:   { w: 0.4, cols: ['#7a3300', '#ffb42a', '#ffe27a', '#ff3a6d'], glyph: 'W' },
+    gun:    { w: 0.3, cols: ['#5a0a0a', '#ff3a3a', '#ff9a9a', '#ffe27a'], glyph: 'G' },
+    pierce: { w: 0.3, cols: ['#06324a', '#2fd8ff', '#c8f6ff', '#ffffff'], glyph: 'P' }
+  };
+  var GLYPHS = {
+    W: ['101', '101', '101', '111', '101'],
+    G: ['111', '100', '101', '101', '111'],
+    P: ['111', '101', '111', '100', '100']
+  };
 
   // Path cards shown after each cleared level
   var CARD_X0 = 4, CARD_Y = 38, CARD_W = 58, CARD_H = 92, CARD_GAP = 5;
@@ -731,6 +743,23 @@ CLEAR A LEVEL, THEN CHOOSE YOUR PATH. EVERY SCENE IS DIFFERENT.</p>
     noise(0.25, 0.4, 'lowpass', 1600, 200, 1);
   }
 
+  function sfxGun() {
+    tone(1400, 0.05, 'square', 0.03, 700);
+    noise(0.03, 0.06, 'highpass', 5000, 3000, 1);
+  }
+
+  function sfxGunOn() {
+    tone(300, 0.12, 'square', 0.1, 600);
+    tone(600, 0.12, 'square', 0.1, 1200, 0.1);
+    noise(0.1, 0.15, 'bandpass', 2000, 4000, 2, 0.05);
+  }
+
+  function sfxPierceOn() {
+    tone(400, 0.35, 'sawtooth', 0.1, 1600);
+    tone(800, 0.3, 'sine', 0.12, 2400, 0.05);
+    noise(0.3, 0.15, 'bandpass', 1500, 6000, 1.5);
+  }
+
   function sfxShield() {
     tone(180, 0.3, 'sine', 0.3, 420);
     noise(0.15, 0.2, 'bandpass', 1500, 800, 1);
@@ -774,6 +803,8 @@ CLEAR A LEVEL, THEN CHOOSE YOUR PATH. EVERY SCENE IS DIFFERENT.</p>
   var trail, flash, paddleFlash, recoil, shake, combo, lastBreak, comboColor;
   var level, stateT, curSpeed, pickups, paddleDY, levelName, padDX, padDY;
   var run, pendingBiome, choices, boonNote, shieldFlash, clearBonus = 0;
+  var sceneArt = null, sceneCache = null, sceneCacheRes = 0;   // living backdrop for the current scene
+  var bullets = [];                                             // shots from the paddle's gun
 
   function hexToRgb(h) {
     return [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
@@ -818,6 +849,8 @@ CLEAR A LEVEL, THEN CHOOSE YOUR PATH. EVERY SCENE IS DIFFERENT.</p>
     var cellW = cellWFor(s), cellH = cellHFor(s);
     var x0 = Math.floor((LW - (lv.cols * cellW - GAP_X)) / 2);
     levelName = lv.name;
+    sceneArt = window.SceneArt ? SceneArt.make(lv.name, n * 7919 + 13) : null;
+    sceneCache = null;
     run.recent = (run.recent || []).concat(lv.name).slice(-4);
     bricks = [];
     for (var r = 0; r < lv.rows.length; r++) {
@@ -856,7 +889,8 @@ CLEAR A LEVEL, THEN CHOOSE YOUR PATH. EVERY SCENE IS DIFFERENT.</p>
   }
 
   function reset(full) {
-    paddle = { x: LW / 2 - PADDLE_W / 2, w: PADDLE_W, y: PADDLE_BASE_Y, wideT: 0, stunT: 0 };
+    paddle = { x: LW / 2 - PADDLE_W / 2, w: PADDLE_W, y: PADDLE_BASE_Y, wideT: 0, stunT: 0, gunT: 0, gunCD: 0, muzzle: 0 };
+    bullets = [];
     shots = [];
     if (boss) boss.atk = 2;
     ball = newBall();
@@ -894,6 +928,7 @@ CLEAR A LEVEL, THEN CHOOSE YOUR PATH. EVERY SCENE IS DIFFERENT.</p>
     ball.vx = Math.sin(ang) * curSpeed;
     ball.vy = -Math.cos(ang) * curSpeed;
     state = 'play';
+    if (ball.pierceArmed) { ball.pierce = true; ball.pierceArmed = false; }
     sfxLaunch();
   }
 
@@ -990,6 +1025,7 @@ CLEAR A LEVEL, THEN CHOOSE YOUR PATH. EVERY SCENE IS DIFFERENT.</p>
   }
 
   function loadBossLevel(n) {
+    sceneArt = null;                     // boss arenas use the stage mood
     var def = bossFor(n), st = stageOf(n), s = scaleFor(n);
     var hp = 10 + 5 * st;
     boss = {
@@ -1075,13 +1111,16 @@ CLEAR A LEVEL, THEN CHOOSE YOUR PATH. EVERY SCENE IS DIFFERENT.</p>
     ringAt(ball.x, ball.y, pal.tones[4], 0.3);
     spawnSparks((SHATTER[pal.fx] || SHATTER.ember).sparks, pal, ball.x, ball.y, ball.x, ball.y, ball.vx >= 0 ? 1 : -1);
     sfxBossHit(pal.fx);
-    if (boss.hp <= 0) {
-      state = 'bossdown';
-      stateT = 1.6;
-      boss.boomT = 0;
-      shots = [];
-      sfxBossRoar();
-    }
+    if (boss.hp <= 0) bossDefeated();
+  }
+
+  function bossDefeated() {
+    state = 'bossdown';
+    stateT = 1.6;
+    boss.boomT = 0;
+    shots = [];
+    bullets = [];
+    sfxBossRoar();
   }
 
   // Death: a chain of explosions across the body, then it bursts into pixels
@@ -1374,7 +1413,27 @@ CLEAR A LEVEL, THEN CHOOSE YOUR PATH. EVERY SCENE IS DIFFERENT.</p>
 
   // ---------- Power-ups ----------
   function spawnPickup(x, y) {
-    pickups.push({ x: x, y: y, vy: 38, t: 0 });
+    var roll = Math.random(), kind = 'wide';
+    for (var k in PICKUP_KINDS) { roll -= PICKUP_KINDS[k].w; if (roll < 0) { kind = k; break; } }
+    pickups.push({ x: x, y: y, vy: 38, t: 0, kind: kind });
+  }
+
+  function catchPickup(p) {
+    var col = PICKUP_KINDS[p.kind].cols[1];
+    impactSparks(p.x + 3, paddle.y, 0, -1, 8, col);
+    if (p.kind === 'gun') {
+      paddle.gunT = GUN_TIME;
+      paddle.gunCD = 0;
+      sfxGunOn();
+    } else if (p.kind === 'pierce') {
+      // Pierce lasts one trip: starts now if the ball is heading up, otherwise on the next paddle hit
+      if (state === 'play' && ball.vy < 0) ball.pierce = true; else ball.pierceArmed = true;
+      sfxPierceOn();
+    } else {
+      setPaddleWidth(PADDLE_WIDE);
+      paddle.wideT = WIDE_TIME;
+      sfxPower();
+    }
   }
 
   function updatePickups(dt) {
@@ -1385,10 +1444,7 @@ CLEAR A LEVEL, THEN CHOOSE YOUR PATH. EVERY SCENE IS DIFFERENT.</p>
       if (p.y > LH) { pickups.splice(i, 1); continue; }
       if (p.y + 4 >= paddle.y && p.y <= paddle.y + PADDLE_H &&
           p.x + 6 >= paddle.x && p.x <= paddle.x + paddle.w) {
-        setPaddleWidth(PADDLE_WIDE);
-        paddle.wideT = WIDE_TIME;
-        impactSparks(p.x + 3, paddle.y, 0, -1, 8, '#ffe27a');
-        sfxPower();
+        catchPickup(p);
         pickups.splice(i, 1);
       }
     }
@@ -1398,17 +1454,66 @@ CLEAR A LEVEL, THEN CHOOSE YOUR PATH. EVERY SCENE IS DIFFERENT.</p>
     for (var i = 0; i < pickups.length; i++) {
       var p = pickups[i];
       var x = half(p.x), y = half(p.y), h = 0.5;
+      var kind = PICKUP_KINDS[p.kind] || PICKUP_KINDS.wide, cols = kind.cols;
       var pulse = Math.floor(p.t * 8) % 2;
-      g.fillStyle = '#7a3300';                                   // rounded capsule outline
+      g.fillStyle = cols[0];                                     // rounded capsule outline
       g.fillRect(x + h, y, 5, 4); g.fillRect(x, y + h, 6, 3);
-      g.fillStyle = pulse ? '#ff3a6d' : '#ffb42a';               // body
+      g.fillStyle = pulse ? cols[3] : cols[1];                   // body
       g.fillRect(x + h, y + h, 5, 3);
-      g.fillStyle = '#ffe27a';                                   // lit upper half
+      g.fillStyle = cols[2];                                     // lit upper half
       g.fillRect(x + h, y + h, 5, 1);
-      g.fillStyle = '#fff6c8';                                   // highlight
-      g.fillRect(x + 1, y + h, 2, h);
-      g.fillStyle = '#a04a00';                                   // seam
-      g.fillRect(x + 3, y + h, h, 3);
+      var rows = GLYPHS[kind.glyph];                             // its letter, on a half-unit grid
+      g.fillStyle = cols[0];
+      for (var gy = 0; gy < 5; gy++) for (var gx = 0; gx < 3; gx++) {
+        if (rows[gy].charAt(gx) === '1') g.fillRect(x + 2.25 + gx * h, y + 0.75 + gy * h, h, h);
+      }
+    }
+  }
+
+  // ---------- Gun: cannons on both ends of the paddle ----------
+  function updateGun(dt) {
+    if (paddle.gunT > 0) {
+      paddle.gunT -= dt;
+      paddle.gunCD -= dt;
+      if (paddle.gunCD <= 0) {
+        paddle.gunCD = GUN_EVERY;
+        bullets.push({ x: paddle.x + 1.5, y: paddle.y - 2 }, { x: paddle.x + paddle.w - 1.5, y: paddle.y - 2 });
+        paddle.muzzle = 0.06;
+        sfxGun();
+      }
+    }
+    paddle.muzzle = Math.max(0, (paddle.muzzle || 0) - dt);
+    for (var i = bullets.length - 1; i >= 0; i--) {
+      var o = bullets[i];
+      o.y -= 240 * dt;
+      if (o.y < 0) { bullets.splice(i, 1); continue; }
+      var hit = false;
+      for (var b = 0; b < bricks.length && !hit; b++) {
+        var k = bricks[b];
+        if (!k.alive || o.x < k.x - 0.5 || o.x > k.x + k.w + 0.5 || o.y < k.y || o.y > k.y + k.h) continue;
+        damageBrick(k, o.x, k.y + k.h, 0, 1, false);
+        hit = true;
+      }
+      if (!hit && boss && boss.hp > 0 && o.x > boss.x + 2 && o.x < boss.x + BOSS_W - 2 &&
+          o.y > boss.y + 6 && o.y < boss.y + BOSS_H) {
+        boss.hp -= 0.25;                                  // bullets only chip at a boss
+        boss.flash = 0.06;
+        score += Math.round(5 * run.scoreMul);
+        impactSparks(o.x, o.y, 0, 1, 3, PAL[boss.def.el].tones[4]);
+        tone(160, 0.06, 'square', 0.06, 90);
+        hit = true;
+        if (boss.hp <= 0) { bullets.splice(i, 1); bossDefeated(); return; }
+      }
+      if (hit) bullets.splice(i, 1);
+    }
+    if (state === 'play' && levelCleared()) finishLevel();
+  }
+
+  function drawBullets() {
+    for (var i = 0; i < bullets.length; i++) {
+      var o = bullets[i];
+      g.fillStyle = '#ff9a2a'; g.fillRect(half(o.x) - 0.25, half(o.y), 0.5, 3);
+      g.fillStyle = '#fff6c8'; g.fillRect(half(o.x) - 0.25, half(o.y), 0.5, 1);
     }
   }
 
@@ -1423,6 +1528,8 @@ CLEAR A LEVEL, THEN CHOOSE YOUR PATH. EVERY SCENE IS DIFFERENT.</p>
   }
 
   function paddleHit(hit) {
+    if (ball.pierce) ball.pierce = false;                     // the piercing trip is over
+    else if (ball.pierceArmed) { ball.pierce = true; ball.pierceArmed = false; sfxPierceOn(); }
     bounce();
     paddleFlash = 0.14;
     recoil = 0.06;
@@ -1439,25 +1546,30 @@ CLEAR A LEVEL, THEN CHOOSE YOUR PATH. EVERY SCENE IS DIFFERENT.</p>
 
     var nx = wasInX ? 0 : (ball.vx > 0 ? 1 : -1);
     var ny = wasInX ? (ball.vy > 0 ? 1 : -1) : 0;
+    damageBrick(k, ball.x, ball.y, nx, ny, false);
+  }
 
+  // Damage a brick hit at (hx, hy). `smash` breaks it outright (piercing ball).
+  // Returns false if it was steel (nothing happened to it).
+  function damageBrick(k, hx, hy, nx, ny, smash) {
     // Steel: indestructible
     if (k.type === 's') {
       k.flash = 0.08;
       shake = Math.min(1, shake + 0.15);
       sfxClank(k.x + k.w / 2);
-      impactSparks(ball.x, ball.y, nx, ny, 3, '#c8cad6');
-      return;
+      impactSparks(hx, hy, nx, ny, 3, '#c8cad6');
+      return false;
     }
 
     // Hard brick: takes a hit and cracks
-    if (k.type === 'h' && k.hp > 1) {
+    if (k.type === 'h' && k.hp > 1 && !smash) {
       k.hp--;
       k.flash = 0.1;
       shake = Math.min(1, shake + 0.2);
       sfxTink(k.x + k.w / 2);
-      ringAt(ball.x, ball.y, k.pal.tones[3], 0.18);
-      impactSparks(ball.x, ball.y, nx, ny, 3);
-      return;
+      ringAt(hx, hy, k.pal.tones[3], 0.18);
+      impactSparks(hx, hy, nx, ny, 3);
+      return true;
     }
 
     // Break it
@@ -1468,12 +1580,13 @@ CLEAR A LEVEL, THEN CHOOSE YOUR PATH. EVERY SCENE IS DIFFERENT.</p>
     comboColor = k.pal.tones[4];
     score += Math.round(10 * combo * run.scoreMul);
 
-    shatter(k, ball.x, ball.y);
+    shatter(k, hx, hy);
     var ladder = Math.pow(2, Math.min(combo - 1, 12) / 6);   // up a semitone per 2 combo hits
     sfxBreak(k.pal.fx, k.x + k.w / 2, pitchMul() * ladder);
     if (combo >= 3) tone(1568 * ladder, 0.15, 'sine', 0.12, null, 0.05);
     shake = Math.min(1, shake + 0.35);
     if (Math.random() < PICKUP_CHANCE + run.dropBonus) spawnPickup(k.x + k.w / 2 - 3, k.y + k.h / 2 - 2);
+    return true;
   }
 
   // ---------- Main update ----------
@@ -1541,6 +1654,7 @@ CLEAR A LEVEL, THEN CHOOSE YOUR PATH. EVERY SCENE IS DIFFERENT.</p>
     updatePickups(dt);
     updateBoss(dt);
     if (state === 'play') updateShots(dt);
+    if (state === 'play') { updateGun(dt); if (state !== 'play') return; }
 
     if (state === 'bossdown') { updateBossDeath(dt); return; }
     if (state === 'intro') {
@@ -1607,6 +1721,10 @@ CLEAR A LEVEL, THEN CHOOSE YOUR PATH. EVERY SCENE IS DIFFERENT.</p>
       var cy = clamp(ball.y, k.y, k.y + k.h);
       var dx = ball.x - cx, dy = ball.y - cy;
       if (dx * dx + dy * dy > r * r) continue;
+      if (ball.pierce) {                    // piercing: smash through, keep going
+        if (k.type !== 's') damageBrick(k, ball.x, ball.y, 0, ball.vy > 0 ? -1 : 1, true);
+        continue;
+      }
       brickHit(k, px, py);
       break;
     }
@@ -1735,8 +1853,35 @@ CLEAR A LEVEL, THEN CHOOSE YOUR PATH. EVERY SCENE IS DIFFERENT.</p>
 
   function moodFor(n) { return MOODS[(stageOf(n) - 1) % MOODS.length]; }
 
+  // The still landscape, painted once at the screen's resolution and reused every frame
+  function sceneCanvas() {
+    if (!sceneCache || sceneCacheRes !== RES) {
+      var c = document.createElement('canvas');
+      c.width = LW * RES; c.height = LH * RES;
+      var cx = c.getContext('2d');
+      cx.setTransform(RES, 0, 0, RES, 0, 0);
+      cx.imageSmoothingEnabled = false;
+      sceneArt.paint(cx);
+      sceneCache = c; sceneCacheRes = RES;
+    }
+    return sceneCache;
+  }
+
   function drawBackdrop() {
     var m = moodFor(level);
+    if (sceneArt) {
+      g.imageSmoothingEnabled = false;
+      g.drawImage(sceneCanvas(), 0, 0, LW, LH);
+      sceneArt.live(g, time);                         // flowing water, smoke, rain...
+      g.globalAlpha = 0.18;                           // the stage mood tints the scene
+      g.fillStyle = m.glow;
+      g.fillRect(0, 0, LW, LH);
+      g.globalAlpha = 0.4;                            // dim it so bricks and ball stand out
+      g.fillStyle = '#05050a';
+      g.fillRect(0, 0, LW, LH);
+      g.globalAlpha = 1;
+      return;
+    }
     var grad = g.createLinearGradient(0, 0, 0, LH);
     grad.addColorStop(0, m.top);
     grad.addColorStop(1, m.bottom);
@@ -1784,6 +1929,20 @@ CLEAR A LEVEL, THEN CHOOSE YOUR PATH. EVERY SCENE IS DIFFERENT.</p>
     if (paddleFlash <= 0) {                                  // gloss sweeping along the top
       g.fillStyle = 'rgba(255,255,255,0.9)';
       g.fillRect(half(x + 2 + (time * 22) % (w - 6)), y + h, 2, h);
+    }
+    if (paddle.gunT > 0) {                                   // cannons on both ends
+      var blink = paddle.gunT < 2 && Math.floor(time * 10) % 2;
+      [x - 0.5, x + w - 2.5].forEach(function (gx) {
+        g.fillStyle = '#22232b'; g.fillRect(gx, y - 2.5, 3, 3);
+        g.fillStyle = blink ? '#ffe27a' : '#8a1a1a'; g.fillRect(gx + 0.5, y - 2, 2, 2);
+        g.fillStyle = '#5b5f70'; g.fillRect(gx + 1, y - 4, 1, 1.5);         // barrel
+        if (paddle.muzzle > 0) { g.fillStyle = '#fff6c8'; g.fillRect(gx + 0.5, y - 5.5, 2, 1.5); }
+      });
+    }
+    if (ball.pierceArmed) {                                  // pierce waiting on the next hit
+      g.globalAlpha = 0.5 + 0.4 * Math.sin(time * 10);
+      g.fillStyle = '#2fd8ff'; g.fillRect(x + 1, y - h, w - 2, h);
+      g.globalAlpha = 1;
     }
     if (paddle.stunT > 0) {                                  // crackling while stunned
       g.fillStyle = Math.floor(time * 20) % 2 ? '#ffe81a' : '#ffffff';
@@ -1846,6 +2005,7 @@ CLEAR A LEVEL, THEN CHOOSE YOUR PATH. EVERY SCENE IS DIFFERENT.</p>
     drawPickups();
     drawParticles();
     drawShots();
+    drawBullets();
 
     var col = ballColor(ball.bounces);
 
@@ -1870,11 +2030,18 @@ CLEAR A LEVEL, THEN CHOOSE YOUR PATH. EVERY SCENE IS DIFFERENT.</p>
     for (var i = 0; i < trail.length; i++) {
       var tp = trail[i], sz = 0.5 * Math.ceil((i + 1) / trail.length * 4);
       g.globalAlpha = (i + 1) / (trail.length + 2) * 0.5;
-      g.fillStyle = col;
+      g.fillStyle = ball.pierce ? '#7fe7ff' : col;
       g.fillRect(half(tp.x - sz / 2), half(tp.y - sz / 2), sz, sz);
     }
     g.globalAlpha = 1;
 
+    if (ball.pierce) {                                       // piercing aura
+      g.globalAlpha = 0.35 + 0.15 * Math.sin(time * 20);
+      g.fillStyle = '#2fd8ff';
+      g.fillRect(half(ball.x - 4), half(ball.y - 2.5), 8, 5);
+      g.fillRect(half(ball.x - 2.5), half(ball.y - 4), 5, 8);
+      g.globalAlpha = 1;
+    }
     drawBall();
 
     // HUD
