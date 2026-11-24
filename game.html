@@ -841,7 +841,13 @@ CAPSULES: W WIDE PADDLE, G SIDE GUNS, P PIERCE. CHOOSE YOUR PATH AFTER EACH LEVE
   function loadLevel(n) {
     boss = null;
     shots = [];
-    if (isBossLevel(n)) { pendingBiome = null; loadBossLevel(n); return; }
+    strikes = [];
+    if (isBossLevel(n) || pendingElite) {
+      var def = pendingBoss || pickBossDef(), elite = pendingElite && !isBossLevel(n);
+      pendingBoss = null; pendingElite = false; pendingBiome = null;
+      loadBossLevel(n, def, elite);
+      return;
+    }
     var s = scaleFor(n);
     var biome = pendingBiome || BIOMES[Math.floor(Math.random() * BIOMES.length)];
     pendingBiome = null;
@@ -889,7 +895,8 @@ CAPSULES: W WIDE PADDLE, G SIDE GUNS, P PIERCE. CHOOSE YOUR PATH AFTER EACH LEVE
   }
 
   function reset(full) {
-    paddle = { x: LW / 2 - PADDLE_W / 2, w: PADDLE_W, y: PADDLE_BASE_Y, wideT: 0, stunT: 0, gunT: 0, gunCD: 0, muzzle: 0 };
+    paddle = { x: LW / 2 - PADDLE_W / 2, w: PADDLE_W, y: PADDLE_BASE_Y, wideT: 0, stunT: 0, slowT: 0, gunT: 0, gunCD: 0, muzzle: 0 };
+    strikes = [];
     bullets = [];
     shots = [];
     if (boss) boss.atk = 2;
@@ -943,11 +950,20 @@ CAPSULES: W WIDE PADDLE, G SIDE GUNS, P PIERCE. CHOOSE YOUR PATH AFTER EACH LEVE
     var recent = run.recent || [];
     var bs = BIOMES.filter(function (b) { return recent.indexOf(b.name) < 0; });   // skip recently played scenes
     if (bs.length < 3) bs = BIOMES.slice();
-    var next = isBossLevel(level + 1) ? bossFor(level + 1) : null;
+    var bossNext = isBossLevel(level + 1), pool = bossPool();
+    // Mid-stage, sometimes one card is an optional elite boss fight
+    var eliteCard = !bossNext && levelInStage(level + 1) >= 2 && Math.random() < 0.4 ? Math.floor(Math.random() * 3) : -1;
     for (var i = 0; i < 3; i++) {
       var bi = Math.floor(Math.random() * bs.length);
       var oi = Math.floor(Math.random() * bo.length);
-      var dest = next ? { name: 'BOSS', key: [String(next.el), String(next.el), 'S'] } : bs.splice(bi, 1)[0];
+      var dest;
+      if (bossNext || i === eliteCard) {               // a boss card: pick your opponent
+        var def = pool.splice(Math.floor(Math.random() * pool.length), 1)[0] || pickBossDef();
+        dest = { name: def.short, key: [String(def.el), String(def.el), String(def.el)], boss: def,
+                 elite: !bossNext, tag: bossNext ? 'BOSS' : 'ELITE' };
+      } else {
+        dest = bs.splice(bi, 1)[0];
+      }
       out.push({ biome: dest, boon: bo.splice(oi, 1)[0] });
     }
     choices = out;
@@ -967,7 +983,9 @@ CAPSULES: W WIDE PADDLE, G SIDE GUNS, P PIERCE. CHOOSE YOUR PATH AFTER EACH LEVE
     sfxPick();
     c.boon.apply(run);
     run.names.push(c.boon.name);
-    pendingBiome = c.biome;
+    if (c.biome.elite) { c.boon.apply(run); run.names.push(c.boon.name); }   // elite: double boon
+    if (c.biome.boss) { pendingBoss = c.biome.boss; pendingElite = !!c.biome.elite; }
+    else pendingBiome = c.biome;
     level++;
     loadLevel(level);
     ball = newBall();
@@ -980,23 +998,37 @@ CAPSULES: W WIDE PADDLE, G SIDE GUNS, P PIERCE. CHOOSE YOUR PATH AFTER EACH LEVE
     if (boss) sfxBossRoar(); else sfxIntro();
   }
 
-  // ---------- Bosses: the last level of every stage ----------
-  // Each boss is a big pixel creature built from its element's texture, with a face,
-  // an accessory (horns, fins, crown...), an HP bar, and attacks that stun the paddle.
+  // ---------- Bosses ----------
+  // The last level of every stage is a boss fight, and path cards can offer optional
+  // elite fights. Each boss has its own look, attack and special move; every stat
+  // scales with the stage, so later bosses are tougher.
+  //   attack: how its shots behave   special: what it does every few seconds
   var BOSSES = [
-    { name: 'STONE GOLEM',    el: 6, extra: 'horns' },
-    { name: 'TIDE LEVIATHAN', el: 1, extra: 'fin' },
-    { name: 'MAGMA KING',     el: 0, extra: 'crown' },
-    { name: 'FROST WARDEN',   el: 4, extra: 'spikes' },
-    { name: 'VOID MAW',       el: 7, extra: 'tendrils' }
+    { name: 'STONE GOLEM',    short: 'GOLEM',      el: 6, extra: 'horns',    face: 'two',     attack: 'orb',    special: 'rebuild',   spEvery: 6 },
+    { name: 'TIDE LEVIATHAN', short: 'LEVIATHAN',  el: 1, extra: 'fin',      face: 'two',     attack: 'wave',   special: 'current',   spEvery: 8 },
+    { name: 'MAGMA KING',     short: 'MAGMA KING', el: 0, extra: 'crown',    face: 'two',     attack: 'bomb',   special: 'barrage',   spEvery: 7 },
+    { name: 'FROST WARDEN',   short: 'WARDEN',     el: 4, extra: 'spikes',   face: 'two',     attack: 'shard',  special: 'iceshield', spEvery: 6 },
+    { name: 'VOID MAW',       short: 'VOID MAW',   el: 7, extra: 'tendrils', face: 'two',     attack: 'homing', special: 'blink',     spEvery: 5 },
+    { name: 'STORM EYE',      short: 'STORM EYE',  el: 3, extra: 'spikes',   face: 'cyclops', attack: 'gust',   special: 'strikes',   spEvery: 5 },
+    { name: 'ROT BLOOM',      short: 'ROT BLOOM',  el: 2, extra: 'petals',   face: 'two',     attack: 'spore',  special: 'regrow',    spEvery: 4 },
+    { name: 'GALE WRAITH',    short: 'WRAITH',     el: 5, extra: 'wisps',    face: 'two',     attack: 'gust',   special: 'wind',      spEvery: 6 }
   ];
   var BOSS_COLS = 32, BOSS_ROWS = 16, BOSS_PX = 2;    // sprite grid, units per sprite pixel
   var BOSS_W = BOSS_COLS * BOSS_PX, BOSS_H = BOSS_ROWS * BOSS_PX, BOSS_Y = 34;
-  var boss = null, shots = [];
+  var boss = null, shots = [], strikes = [];
+  var pendingBoss = null, pendingElite = false, lastBossElite = false;
 
   function isBossLevel(n) { return levelInStage(n) === LEVELS_PER_STAGE; }
-  function bossFor(n) { return BOSSES[(stageOf(n) - 1) % BOSSES.length]; }
   function speedFor(n) { return Math.min(BASE_SPEED * (1 + 0.06 * (n - 1)), BASE_SPEED * 1.8) * run.speedMul; }
+
+  // Bosses not fought yet this run come first, so the roster keeps changing
+  function bossPool() {
+    var fought = run.bossesFought || [];
+    var fresh = BOSSES.filter(function (b) { return fought.indexOf(b.name) < 0; });
+    return (fresh.length >= 3 ? fresh : BOSSES).slice();
+  }
+
+  function pickBossDef() { var p = bossPool(); return p[Math.floor(Math.random() * p.length)]; }
 
   // Shape: 0 empty, 1 body (an oval), 2 accessory on top
   function bossMask(def) {
@@ -1020,31 +1052,43 @@ CAPSULES: W WIDE PADDLE, G SIDE GUNS, P PIERCE. CHOOSE YOUR PATH AFTER EACH LEVE
       for (i = 0; i < 3; i++) for (x = 15 - i; x <= 16 + i; x++) set(x - 2 + i, i);
     } else if (def.extra === 'tendrils') {
       [8, 12, 19, 23].forEach(function (p, k) { set(p, 2); set(p + (k % 2 ? 1 : -1), 1); set(p, 0); });
+    } else if (def.extra === 'petals') {
+      [6, 11, 16, 21, 26].forEach(function (p) { set(p, 2); set(p - 1, 1); set(p, 1); set(p + 1, 1); set(p, 0); });
+    } else if (def.extra === 'wisps') {
+      for (x = 5; x <= 26; x += 4) { set(x, 2); set(x + 1, 1); set(x + 2, 0); }
     }
     return m;
   }
 
-  function loadBossLevel(n) {
+  // n: level number, def: which boss, elite: an optional fight picked mid-stage
+  function loadBossLevel(n, def, elite) {
     sceneArt = null;                     // boss arenas use the stage mood
-    var def = bossFor(n), st = stageOf(n), s = scaleFor(n);
-    var hp = 10 + 5 * st;
+    var st = stageOf(n), s = scaleFor(n);
+    var hp = Math.round((10 + 7 * st) * (elite ? 0.7 : 1));
+    var hard = 1 - 0.11 * (st - 1);      // shortens every timer as the stages go up
     boss = {
-      def: def, pal: stagePal(def.el, n), mask: bossMask(def), x: (LW - BOSS_W) / 2, y: BOSS_Y,
-      hp: hp, maxHp: hp, flash: 0, phase: 0, speed: 0.55 + 0.12 * st,
-      atk: 2.5, atkEvery: Math.max(1.1, 2.5 - 0.25 * st), boomT: 0, seed: n * 31
+      def: def, pal: stagePal(def.el, n), mask: bossMask(def), elite: !!elite, st: st,
+      x: (LW - BOSS_W) / 2, y: BOSS_Y, hp: hp, maxHp: hp, flash: 0, phase: 0,
+      speed: 0.5 + 0.13 * st, shotSpeed: 44 + 11 * st,
+      atk: 2.4, atkEvery: Math.max(0.75, 2.6 * hard),
+      sp: def.spEvery * hard, spEvery: def.spEvery * hard,
+      blinkT: 0, currentT: 0, currentDir: 1, windT: 0, windDir: 1,
+      boomT: 0, seed: n * 31
     };
+    run.bossesFought = (run.bossesFought || []).concat(def.name);
     shots = [];
+    strikes = [];
     levelName = def.name;
     // A row of guard bricks of the boss's element between the boss and the paddle
     var cellW = cellWFor(s), cols = colsFor(s);
     var x0 = Math.floor((LW - (cols * cellW - GAP_X)) / 2), gy = BOSS_Y + BOSS_H + 6;
     bricks = [];
     for (var c = 0; c < cols; c++) {
-      if (st === 1 && c % 2 === 1) continue;            // the first boss's guard has gaps
-      var hard = st >= 3 && c % 2 === 0;
+      if (st === 1 && c % 2 === 1) continue;            // the first stage's guard has gaps
+      var hardBrick = st >= 3 && c % 2 === 0;
       bricks.push({
-        x: x0 + c * cellW, y: gy, s: s, w: BW * s, h: BH * s, alive: true,
-        type: hard ? 'h' : 'n', hp: hard ? 2 : 1, maxHp: hard ? 2 : 1, flash: 0,
+        x: x0 + c * cellW, y: gy, s: s, w: BW * s, h: BH * s, alive: true, guard: true,
+        type: hardBrick ? 'h' : 'n', hp: hardBrick ? 2 : 1, maxHp: hardBrick ? 2 : 1, flash: 0,
         seed: c + n * 97, pal: stagePal(def.el, n)
       });
     }
@@ -1052,48 +1096,157 @@ CAPSULES: W WIDE PADDLE, G SIDE GUNS, P PIERCE. CHOOSE YOUR PATH AFTER EACH LEVE
   }
 
   function bossEnraged() { return boss && boss.hp <= boss.maxHp / 2; }
+  function bossFrenzy() { return boss && boss.st >= 4 && boss.hp <= boss.maxHp / 4; }
+  function bossAngerMul() { return bossFrenzy() ? 0.45 : (bossEnraged() ? 0.62 : 1); }
 
   function updateBoss(dt) {
     if (!boss) return;
     boss.flash = Math.max(0, boss.flash - dt);
-    boss.phase += dt * boss.speed * (bossEnraged() ? 1.6 : 1);
+    boss.blinkT = Math.max(0, boss.blinkT - dt);
+    boss.phase += dt * boss.speed * (bossFrenzy() ? 2 : (bossEnraged() ? 1.6 : 1));
     boss.x = (LW - BOSS_W) / 2 + Math.sin(boss.phase) * ((LW - BOSS_W) / 2 - 4);
     boss.y = BOSS_Y + Math.sin(time * 2) * 1.5;
-    if (state === 'play') {
-      boss.atk -= dt;
-      if (boss.atk <= 0) {
-        boss.atk = boss.atkEvery * (bossEnraged() ? 0.6 : 1);
-        fireShot();
-      }
+
+    // Tidal current drags the paddle sideways
+    if (boss.currentT > 0) {
+      boss.currentT -= dt;
+      paddle.x = clamp(paddle.x + boss.currentDir * (30 + 6 * boss.st) * dt, 0, LW - paddle.w);
+    }
+    // Wind pushes the ball off its line (keeping its speed)
+    if (boss.windT > 0 && state === 'play') {
+      boss.windT -= dt;
+      var sp = Math.hypot(ball.vx, ball.vy);
+      ball.vx += boss.windDir * (50 + 10 * boss.st) * dt;
+      var vy = Math.sign(ball.vy || -1) * Math.max(Math.abs(ball.vy), sp * 0.4);
+      var k = sp / (Math.hypot(ball.vx, vy) || 1);
+      ball.vx *= k; ball.vy = vy * k;
+    }
+
+    if (state !== 'play') return;
+    boss.atk -= dt;
+    if (boss.atk <= 0) {
+      boss.atk = boss.atkEvery * bossAngerMul();
+      fireShot();
+    }
+    boss.sp -= dt;
+    if (boss.sp <= 0) {
+      boss.sp = boss.spEvery * (bossEnraged() ? 0.7 : 1);
+      bossSpecial();
     }
   }
 
-  // Element orbs aimed roughly at the paddle; a spread of three when enraged from stage 3
+  function addShot(kind, x, y, vx, vy) {
+    shots.push({ kind: kind, x: x, y: y, vx: vx, vy: vy, t: 0, split: false });
+  }
+
+  // Each boss's attack. A spread of three from stage 3 when enraged.
   function fireShot() {
-    var sx = boss.x + BOSS_W / 2, sy = boss.y + BOSS_H - 2;
-    var speed = 48 + 8 * stageOf(level);
+    var kind = boss.def.attack, sx = boss.x + BOSS_W / 2, sy = boss.y + BOSS_H - 2;
+    var speed = boss.shotSpeed;
+    if (kind === 'shard') speed *= 1.35;
+    if (kind === 'gust') speed *= 1.5;
+    if (kind === 'spore') speed *= 0.5;
+    if (kind === 'bomb') speed *= 0.8;
     var aim = clamp((paddle.x + paddle.w / 2 - sx) / 120, -0.5, 0.5);
-    var spread = bossEnraged() && stageOf(level) >= 3 ? [-0.35, 0, 0.35] : [0];
+    var spread = bossEnraged() && boss.st >= 3 ? [-0.35, 0, 0.35] : [0];
+    if (kind === 'gust') spread = spread.length > 1 ? [-0.2, -0.07, 0.07, 0.2] : [-0.08, 0.08];   // rapid pairs
     for (var i = 0; i < spread.length; i++) {
       var a = aim + spread[i];
-      shots.push({ x: sx, y: sy, vx: Math.sin(a) * speed, vy: Math.cos(a) * speed, t: 0 });
+      addShot(kind, sx, sy, Math.sin(a) * speed, Math.cos(a) * speed);
     }
     sfxBossShoot();
   }
 
+  // Each boss's special move
+  function bossSpecial() {
+    var sp = boss.def.special, i;
+    if (sp === 'rebuild' || sp === 'regrow' || sp === 'iceshield') {
+      var dead = bricks.filter(function (k) { return k.guard && !k.alive; });
+      var count = sp === 'regrow' ? 2 : 1;
+      for (i = 0; i < count && dead.length; i++) {
+        var k = dead.splice(Math.floor(Math.random() * dead.length), 1)[0];
+        k.alive = true;
+        k.flash = 0.2;
+        if (sp === 'iceshield') { k.type = 'h'; k.hp = k.maxHp = 2; k.pal = stagePal(4, level); }
+        else { k.hp = k.maxHp; }
+        ringAt(k.x + k.w / 2, k.y + k.h / 2, k.pal.tones[4], 0.3);
+        spawnSparks((SHATTER[k.pal.fx] || SHATTER.ember).sparks, k.pal, k.x + k.w / 2, k.y + k.h / 2, k.x + k.w / 2, k.y + k.h / 2, 1);
+      }
+      tone(220, 0.25, 'triangle', 0.15, 440);
+    } else if (sp === 'current') {
+      boss.currentT = 2 + 0.3 * boss.st;
+      boss.currentDir = paddle.x + paddle.w / 2 < LW / 2 ? -1 : 1;   // drags you toward the near wall
+      noise(1.2, 0.2, 'bandpass', 400, 900, 1.2);
+    } else if (sp === 'barrage') {
+      for (i = -1; i <= 1; i++) addShot('bomb', boss.x + BOSS_W / 2 + i * 14, boss.y + BOSS_H - 2, i * 18, boss.shotSpeed * 0.75);
+      sfxBossRoar();
+    } else if (sp === 'blink') {
+      boss.blinkT = 0.9;                                             // intangible while it teleports
+      ringAt(boss.x + BOSS_W / 2, boss.y + BOSS_H / 2, boss.pal.tones[3], 0.4);
+      boss.phase = Math.random() * TAU;
+      tone(900, 0.3, 'sine', 0.1, 120);
+    } else if (sp === 'strikes') {
+      var n = 1 + Math.floor(boss.st / 2);
+      for (i = 0; i < n; i++) {
+        var sx = i === 0 ? paddle.x + paddle.w / 2 : 12 + Math.random() * (LW - 24);
+        strikes.push({ x: sx, t: 0, warn: Math.max(0.5, 0.95 - 0.08 * boss.st), live: 0.25, hit: false });
+      }
+    } else if (sp === 'wind') {
+      boss.windT = 1.4 + 0.2 * boss.st;
+      boss.windDir = Math.random() < 0.5 ? -1 : 1;
+      noise(1.4, 0.3, 'bandpass', 300, 1800, 1.4);
+    }
+  }
+
+  function stunPaddle(t, x, col) {
+    paddle.stunT = Math.max(paddle.stunT, t);
+    shake = Math.min(1, shake + 0.5);
+    impactSparks(x, paddle.y, 0, -1, 10, col);
+    sfxStun();
+  }
+
   function updateShots(dt) {
+    var col = (boss ? boss.pal : PAL[3]).tones[4];
     for (var i = shots.length - 1; i >= 0; i--) {
       var o = shots[i];
-      o.x += o.vx * dt; o.y += o.vy * dt; o.t += dt;
-      if (o.y > LH + 4) { shots.splice(i, 1); continue; }
-      if (o.x + 1.5 >= paddle.x && o.x - 1.5 <= paddle.x + paddle.w &&
-          o.y + 1.5 >= paddle.y && o.y - 1.5 <= paddle.y + PADDLE_H) {
+      o.t += dt;
+      if (o.kind === 'wave') o.vx = Math.cos(o.t * 5) * 45;                          // weaving
+      if (o.kind === 'homing') o.vx += clamp(paddle.x + paddle.w / 2 - o.x, -60, 60) * 1.6 * dt;
+      if (o.kind === 'spore') o.vx = Math.sin(o.t * 2 + i) * 14;
+      o.x += o.vx * dt; o.y += o.vy * dt;
+      if (o.kind === 'bomb' && !o.split && o.y > 112) {                              // splits into embers
+        o.split = true;
+        for (var e = -1; e <= 1; e++) addShot('orb', o.x, o.y, e * 40, o.vy * 1.1);
         shots.splice(i, 1);
-        paddle.stunT = 0.9;                              // the paddle freezes briefly
-        shake = Math.min(1, shake + 0.5);
-        impactSparks(o.x, paddle.y, 0, -1, 10, (boss ? boss.pal : PAL[3]).tones[4]);
-        sfxStun();
+        tone(160, 0.15, 'sawtooth', 0.1, 80);
+        continue;
       }
+      if (o.y > LH + 4 || o.x < -6 || o.x > LW + 6) { shots.splice(i, 1); continue; }
+      var rad = o.kind === 'spore' ? 3 : 1.5;
+      if (o.x + rad >= paddle.x && o.x - rad <= paddle.x + paddle.w &&
+          o.y + rad >= paddle.y && o.y - rad <= paddle.y + PADDLE_H) {
+        shots.splice(i, 1);
+        if (o.kind === 'shard') {                                                    // ice slows instead of stunning
+          paddle.slowT = 2.2 + 0.3 * (boss ? boss.st : 1);
+          impactSparks(o.x, paddle.y, 0, -1, 8, '#d8f8ff');
+          tone(1800, 0.2, 'sine', 0.12, 900);
+        } else {
+          stunPaddle(o.kind === 'spore' ? 1.2 : (o.kind === 'gust' ? 0.5 : 0.9), o.x, col);
+        }
+      }
+    }
+    // Lightning strikes: a warning column, then the bolt
+    for (var j = strikes.length - 1; j >= 0; j--) {
+      var s = strikes[j];
+      var wasLive = s.t >= s.warn;
+      s.t += dt;
+      if (!wasLive && s.t >= s.warn) { noise(0.25, 0.7, 'highpass', 2500, 500, 0.6); shake = Math.min(1, shake + 0.4); }
+      if (s.t >= s.warn && s.t < s.warn + s.live && !s.hit &&
+          paddle.x + paddle.w >= s.x - 3 && paddle.x <= s.x + 3) {
+        s.hit = true;
+        stunPaddle(0.8, s.x, '#fffbd6');
+      }
+      if (s.t > s.warn + s.live) strikes.splice(j, 1);
     }
   }
 
@@ -1119,6 +1272,7 @@ CAPSULES: W WIDE PADDLE, G SIDE GUNS, P PIERCE. CHOOSE YOUR PATH AFTER EACH LEVE
     stateT = 1.6;
     boss.boomT = 0;
     shots = [];
+    strikes = [];
     bullets = [];
     sfxBossRoar();
   }
@@ -1154,6 +1308,7 @@ CAPSULES: W WIDE PADDLE, G SIDE GUNS, P PIERCE. CHOOSE YOUR PATH AFTER EACH LEVE
       ringAt(cx, cy, pal.tones[4], 0.6);
       shake = 1;
       sfxBoom();
+      lastBossElite = boss.elite;
       boss = null;
       finishLevel();
     }
@@ -1163,6 +1318,7 @@ CAPSULES: W WIDE PADDLE, G SIDE GUNS, P PIERCE. CHOOSE YOUR PATH AFTER EACH LEVE
     if (!boss) return;
     var pal = boss.pal, t = pal.tones, m = boss.mask;
     var bx = half(boss.x), by = half(boss.y), P = BOSS_PX;
+    if (boss.blinkT > 0) g.globalAlpha = 0.3 + 0.2 * Math.sin(time * 40);   // phased out
     for (var y = 0; y < BOSS_ROWS; y++) {
       for (var x = 0; x < BOSS_COLS; x++) {
         var v = m[y][x];
@@ -1187,13 +1343,25 @@ CAPSULES: W WIDE PADDLE, G SIDE GUNS, P PIERCE. CHOOSE YOUR PATH AFTER EACH LEVE
     var angry = bossEnraged();
     var look = clamp(Math.round((ball.x - (boss.x + BOSS_W / 2)) / 40), -1, 1);
     var blink = (time % 3.2) < 0.12;
-    [9, 20].forEach(function (ex) {
-      if (blink) { g.fillStyle = t[0]; g.fillRect(bx + ex * P, by + 7 * P, 3 * P, P); return; }
-      g.fillStyle = t[0]; g.fillRect(bx + (ex - 1) * P, by + 5 * P, 5 * P, 5 * P);   // socket
-      g.fillStyle = angry ? '#ff4040' : '#ffffff'; g.fillRect(bx + ex * P, by + 6 * P, 3 * P, 3 * P);
-      g.fillStyle = '#07070d'; g.fillRect(bx + (ex + 1 + look) * P, by + 7 * P, P, P);  // pupil
-      g.fillStyle = 'rgba(255,255,255,0.8)'; g.fillRect(bx + ex * P + 0.5, by + 6 * P + 0.5, 1, 1);
-    });
+    var eyeCol = bossFrenzy() ? (Math.floor(time * 12) % 2 ? '#ffffff' : '#ff2020') : (angry ? '#ff4040' : '#ffffff');
+    if (boss.def.face === 'cyclops') {                 // one great eye
+      g.fillStyle = t[0]; g.fillRect(bx + 12 * P, by + 4 * P, 8 * P, 7 * P);
+      if (blink) { g.fillStyle = t[3]; g.fillRect(bx + 13 * P, by + 7 * P, 6 * P, P); }
+      else {
+        g.fillStyle = eyeCol; g.fillRect(bx + 13 * P, by + 5 * P, 6 * P, 5 * P);
+        g.fillStyle = t[2]; g.fillRect(bx + (15 + look) * P, by + 6 * P, 2 * P, 3 * P);     // iris
+        g.fillStyle = '#07070d'; g.fillRect(bx + (15.5 + look) * P, by + 7 * P, P, P);    // pupil
+        g.fillStyle = 'rgba(255,255,255,0.8)'; g.fillRect(bx + 13 * P + 0.5, by + 5 * P + 0.5, 1.5, 1);
+      }
+    } else {
+      [9, 20].forEach(function (ex) {
+        if (blink) { g.fillStyle = t[0]; g.fillRect(bx + ex * P, by + 7 * P, 3 * P, P); return; }
+        g.fillStyle = t[0]; g.fillRect(bx + (ex - 1) * P, by + 5 * P, 5 * P, 5 * P);   // socket
+        g.fillStyle = eyeCol; g.fillRect(bx + ex * P, by + 6 * P, 3 * P, 3 * P);
+        g.fillStyle = '#07070d'; g.fillRect(bx + (ex + 1 + look) * P, by + 7 * P, P, P);  // pupil
+        g.fillStyle = 'rgba(255,255,255,0.8)'; g.fillRect(bx + ex * P + 0.5, by + 6 * P + 0.5, 1, 1);
+      });
+    }
     for (var mx = 11; mx <= 20; mx++) {
       g.fillStyle = t[0];
       g.fillRect(bx + mx * P, by + 11 * P, P, P);
@@ -1204,18 +1372,78 @@ CAPSULES: W WIDE PADDLE, G SIDE GUNS, P PIERCE. CHOOSE YOUR PATH AFTER EACH LEVE
         g.fillRect(bx + mx * P, by + 12 * P, P, P);
       }
     }
+    if (boss.elite) {                                  // elite marker: a gold band over the brow
+      g.fillStyle = '#ffe27a';
+      g.fillRect(bx + 10 * P, by + 3.5 * P, 12 * P, 0.5);
+    }
+    g.globalAlpha = 1;
+  }
+
+  // Boss effects that sit in the arena: current lines, wind streaks, lightning columns
+  function drawBossEffects() {
+    var i;
+    if (boss && boss.currentT > 0) {
+      g.globalAlpha = 0.5;
+      g.fillStyle = boss.pal.tones[3];
+      for (i = 0; i < 14; i++) {
+        var cx = ((i * 29 + time * 60 * boss.currentDir) % LW + LW) % LW;
+        g.fillRect(half(cx), half(PADDLE_TOP_Y + (i * 7) % 34), 4, 0.5);
+      }
+    }
+    if (boss && boss.windT > 0) {
+      g.globalAlpha = 0.35;
+      g.fillStyle = '#ffffff';
+      for (i = 0; i < 18; i++) {
+        var wx = ((i * 41 + time * 160 * boss.windDir) % LW + LW) % LW;
+        g.fillRect(half(wx), half(70 + (i * 13) % 70), 6, 0.5);
+      }
+    }
+    for (i = 0; i < strikes.length; i++) {
+      var s = strikes[i];
+      if (s.t < s.warn) {                              // warning: a flickering column
+        g.globalAlpha = 0.25 + 0.25 * (Math.floor(s.t * 16) % 2);
+        g.fillStyle = '#ffe81a';
+        g.fillRect(half(s.x - 3), BOSS_Y + BOSS_H, 6, LH);
+        g.globalAlpha = 0.9;
+        g.fillRect(half(s.x - 3), BOSS_Y + BOSS_H, 0.5, LH); g.fillRect(half(s.x + 2.5), BOSS_Y + BOSS_H, 0.5, LH);
+      } else {                                         // the bolt
+        g.globalAlpha = 1;
+        for (var y = BOSS_Y + BOSS_H; y < LH; y += 3) {
+          var jx = s.x + Math.sin(y * 0.9 + s.t * 40) * 2;
+          g.fillStyle = '#fffbd6'; g.fillRect(half(jx - 1), y, 2, 3);
+          g.fillStyle = '#ffe81a'; g.fillRect(half(jx - 2), y, 0.5, 3); g.fillRect(half(jx + 1.5), y, 0.5, 3);
+        }
+      }
+    }
+    g.globalAlpha = 1;
   }
 
   function drawShots() {
+    var t = (boss ? boss.pal : PAL[3]).tones;
     for (var i = 0; i < shots.length; i++) {
-      var o = shots[i], t = (boss ? boss.pal : PAL[3]).tones;
-      var x = half(o.x), y = half(o.y);
+      var o = shots[i], x = half(o.x), y = half(o.y);
       g.globalAlpha = 0.35; g.fillStyle = t[2];                       // short trail
       g.fillRect(half(o.x - o.vx * 0.04) - 0.5, half(o.y - o.vy * 0.04) - 0.5, 1, 1);
       g.globalAlpha = 1;
-      g.fillStyle = t[0]; g.fillRect(x - 1.5, y - 1, 3, 2); g.fillRect(x - 1, y - 1.5, 2, 3);
-      g.fillStyle = Math.floor(o.t * 12) % 2 ? t[3] : t[2]; g.fillRect(x - 1, y - 1, 2, 2);
-      g.fillStyle = t[4]; g.fillRect(x - 0.5, y - 0.5, 0.5, 0.5);
+      if (o.kind === 'shard') {                                       // long ice needle
+        g.fillStyle = '#2a6f9e'; g.fillRect(x - 1, y - 2.5, 2, 5);
+        g.fillStyle = '#d8f8ff'; g.fillRect(x - 0.5, y - 2.5, 1, 4);
+      } else if (o.kind === 'gust') {                                 // thin fast streak
+        g.fillStyle = t[3]; g.fillRect(x - 0.25, y - 2, 0.5, 4);
+        g.fillStyle = '#ffffff'; g.fillRect(x - 0.25, y + 1, 0.5, 1);
+      } else if (o.kind === 'spore') {                                // a soft cloud
+        g.globalAlpha = 0.75;
+        g.fillStyle = t[1]; g.fillRect(x - 3, y - 2, 6, 4); g.fillRect(x - 2, y - 3, 4, 6);
+        g.fillStyle = t[3]; g.fillRect(x - 1.5, y - 1.5, 2, 2);
+        g.globalAlpha = 1;
+      } else if (o.kind === 'bomb') {                                 // a big pulsing lava bomb
+        g.fillStyle = t[0]; g.fillRect(x - 2.5, y - 2, 5, 4); g.fillRect(x - 2, y - 2.5, 4, 5);
+        g.fillStyle = Math.floor(o.t * 10) % 2 ? t[4] : t[3]; g.fillRect(x - 1.5, y - 1.5, 3, 3);
+      } else {                                                        // orb, wave, homing
+        g.fillStyle = t[0]; g.fillRect(x - 1.5, y - 1, 3, 2); g.fillRect(x - 1, y - 1.5, 2, 3);
+        g.fillStyle = Math.floor(o.t * 12) % 2 ? t[3] : t[2]; g.fillRect(x - 1, y - 1, 2, 2);
+        g.fillStyle = o.kind === 'homing' ? '#07070d' : t[4]; g.fillRect(x - 0.5, y - 0.5, 0.5, 0.5);
+      }
     }
   }
 
@@ -1224,12 +1452,15 @@ CAPSULES: W WIDE PADDLE, G SIDE GUNS, P PIERCE. CHOOSE YOUR PATH AFTER EACH LEVE
     var t = boss.pal.tones, bw = 140, bxp = (LW - bw) / 2;
     var frac = Math.max(0, boss.hp) / boss.maxHp;
     g.font = FONT_CARD; g.textAlign = 'center'; g.textBaseline = 'top';
-    g.fillStyle = t[3];
-    g.fillText(boss.def.name, LW / 2, 21);
+    g.fillStyle = boss.elite ? '#ffe27a' : t[3];
+    g.fillText((boss.elite ? 'ELITE ' : '') + boss.def.name, LW / 2, 21);
     g.fillStyle = '#1a1b22'; g.fillRect(bxp - 0.5, 27.5, bw + 1, 3);
     g.fillStyle = bossEnraged() && Math.floor(time * 6) % 2 ? t[4] : t[2];
     g.fillRect(bxp, 28, bw * frac, 2);
     g.fillStyle = t[4]; g.fillRect(bxp, 28, bw * frac, 0.5);
+    g.fillStyle = '#07070d';                             // notches at the enrage thresholds
+    g.fillRect(bxp + bw * 0.5, 28, 0.5, 2);
+    if (boss.st >= 4) g.fillRect(bxp + bw * 0.25, 28, 0.5, 2);
     g.textAlign = 'left';
   }
 
@@ -1494,7 +1725,7 @@ CAPSULES: W WIDE PADDLE, G SIDE GUNS, P PIERCE. CHOOSE YOUR PATH AFTER EACH LEVE
         damageBrick(k, o.x, k.y + k.h, 0, 1, false);
         hit = true;
       }
-      if (!hit && boss && boss.hp > 0 && o.x > boss.x + 2 && o.x < boss.x + BOSS_W - 2 &&
+      if (!hit && boss && boss.hp > 0 && boss.blinkT <= 0 && o.x > boss.x + 2 && o.x < boss.x + BOSS_W - 2 &&
           o.y > boss.y + 6 && o.y < boss.y + BOSS_H) {
         boss.hp -= 0.25;                                  // bullets only chip at a boss
         boss.flash = 0.06;
@@ -1602,6 +1833,8 @@ CAPSULES: W WIDE PADDLE, G SIDE GUNS, P PIERCE. CHOOSE YOUR PATH AFTER EACH LEVE
   function finishLevel() {
     clearBonus = Math.round(100 * level * run.scoreMul);
     if (levelInStage(level) === LEVELS_PER_STAGE) clearBonus += Math.round(1500 * stageOf(level) * run.scoreMul);
+    if (lastBossElite) clearBonus += Math.round(800 * stageOf(level) * run.scoreMul);
+    lastBossElite = false;
     score += clearBonus;
     lives = Math.min(5, lives + 1);
     sfxClear();
@@ -1638,6 +1871,11 @@ CAPSULES: W WIDE PADDLE, G SIDE GUNS, P PIERCE. CHOOSE YOUR PATH AFTER EACH LEVE
     paddleDY = 0;
     padDY = 0;
     paddle.y = clamp(paddle.y, PADDLE_TOP_Y, PADDLE_BASE_Y);
+    if (paddle.slowT > 0) {                // chilled by an ice shard: moves at under half speed
+      paddle.slowT -= dt;
+      paddle.x = stunX + (paddle.x - stunX) * 0.45;
+      paddle.y = stunY + (paddle.y - stunY) * 0.45;
+    }
     if (paddle.stunT > 0) {                // stunned by a boss orb: stay put
       paddle.stunT -= dt;
       paddle.x = stunX;
@@ -1730,7 +1968,7 @@ CAPSULES: W WIDE PADDLE, G SIDE GUNS, P PIERCE. CHOOSE YOUR PATH AFTER EACH LEVE
     }
 
     // Boss: the ball damages it on contact
-    if (boss && boss.hp > 0) {
+    if (boss && boss.hp > 0 && boss.blinkT <= 0) {
       var bcx = clamp(ball.x, boss.x + 2, boss.x + BOSS_W - 2);
       var bcy = clamp(ball.y, boss.y + 6, boss.y + BOSS_H);
       var bdx = ball.x - bcx, bdy = ball.y - bcy;
@@ -1823,7 +2061,11 @@ CAPSULES: W WIDE PADDLE, G SIDE GUNS, P PIERCE. CHOOSE YOUR PATH AFTER EACH LEVE
     g.font = FONT_CARD;
     g.fillStyle = '#ebebf5';
     g.fillText(c.biome.name, x + W / 2, y + 5);
-    for (var j = 0; j < 3; j++) {                              // element swatches for the scene
+    if (c.biome.tag) {                                         // a boss card
+      g.fillStyle = c.biome.elite ? '#ffe27a' : '#ff4040';
+      g.fillText(c.biome.tag, x + W / 2, y + 15);
+      if (c.biome.elite) { g.fillStyle = '#8c8ca8'; g.fillText('2X BOON', x + W / 2, y + 66); }
+    } else for (var j = 0; j < 3; j++) {                       // element swatches for the scene
       var t = keyPal(c.biome.key[j]).tones;
       g.fillStyle = t[2]; g.fillRect(x + 8 + j * 14, y + 16, 10, 6);
       g.fillStyle = t[4]; g.fillRect(x + 8 + j * 14, y + 21, 10, 1);
@@ -1957,6 +2199,11 @@ CAPSULES: W WIDE PADDLE, G SIDE GUNS, P PIERCE. CHOOSE YOUR PATH AFTER EACH LEVE
       g.fillStyle = '#2fd8ff'; g.fillRect(x + 1, y - h, w - 2, h);
       g.globalAlpha = 1;
     }
+    if (paddle.slowT > 0) {                                  // frosted while slowed
+      g.globalAlpha = 0.55;
+      g.fillStyle = '#d8f8ff'; g.fillRect(x + 1, y, w - 2, 1.5);
+      g.globalAlpha = 1;
+    }
     if (paddle.stunT > 0) {                                  // crackling while stunned
       g.fillStyle = Math.floor(time * 20) % 2 ? '#ffe81a' : '#ffffff';
       for (var z = 0; z < 6; z++) g.fillRect(half(x + Math.random() * w), half(y - 1 + Math.random() * 5), 0.5, 0.5);
@@ -2017,6 +2264,7 @@ CAPSULES: W WIDE PADDLE, G SIDE GUNS, P PIERCE. CHOOSE YOUR PATH AFTER EACH LEVE
     drawBoss();
     drawPickups();
     drawParticles();
+    drawBossEffects();
     drawShots();
     drawBullets();
 
@@ -2093,7 +2341,7 @@ CAPSULES: W WIDE PADDLE, G SIDE GUNS, P PIERCE. CHOOSE YOUR PATH AFTER EACH LEVE
       g.font = FONT_BIG;
       g.fillStyle = '#ebebf5';
       g.font = FONT_HUD;
-      g.fillText(boss ? 'BOSS FIGHT' : 'LEVEL ' + levelInStage(level) + ' OF ' + LEVELS_PER_STAGE, LW / 2, 116);
+      g.fillText(boss ? (boss.elite ? 'ELITE FIGHT' : 'BOSS FIGHT') : 'LEVEL ' + levelInStage(level) + ' OF ' + LEVELS_PER_STAGE, LW / 2, 116);
       g.fillStyle = col;
       g.fillText(levelName, LW / 2, 126);
       g.fillStyle = '#8c8ca8';
